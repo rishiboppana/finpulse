@@ -43,7 +43,7 @@ class _MainShellState extends State<MainShell> {
       DashboardScreen(),
       StatsScreen(),
       PlaceholderScreen(title: "Wallet"),
-      PlaceholderScreen(title: "Settings"),
+      SettingsScreen(),
     ];
 
     return Scaffold(
@@ -407,6 +407,9 @@ class _StatsScreenState extends State<StatsScreen> {
   // Time range tabs like the reference
   int rangeIndex = 2; // 0 Daily, 1 Weekly, 2 Monthly, 3 Yearly
 
+  DateTimeRange? selectedRange;
+  DateTime? selectedSingleDate;
+
   // Filters (UI only for now)
   final Map<String, String> filters = {
     "Accounts": "All",
@@ -414,6 +417,31 @@ class _StatsScreenState extends State<StatsScreen> {
     "Dates": "Last 30d",
     "Type": "All",
   };
+
+  // Searchable insights data (UI only for now)
+  final List<_InsightData> insightsData = const [
+    _InsightData(
+      icon: Icons.coffee_rounded,
+      iconBg: Color(0xFFFFF1E7),
+      iconColor: Color(0xFFF97316),
+      title: "You spent 15% more on Coffee this week than your average.",
+      subtitle: "That’s about \$12.50 extra.",
+    ),
+    _InsightData(
+      icon: Icons.check_circle_rounded,
+      iconBg: Color(0xFFE9FFF9),
+      iconColor: Color(0xFF10B981),
+      title: "Great job! You are \$200 under your dining budget this month.",
+      subtitle: "Keep it up to reach your savings goal.",
+    ),
+    _InsightData(
+      icon: Icons.notifications_active_rounded,
+      iconBg: Color(0xFFE8F0FF),
+      iconColor: Color(0xFF3B82F6),
+      title: "Subscription Alert: Netflix increased by \$2.00 starting next cycle.",
+      subtitle: "Detected in your recurring payments.",
+    ),
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -439,7 +467,10 @@ class _StatsScreenState extends State<StatsScreen> {
             // Top bar (calendar icon, title, search icon)
             Row(
               children: [
-                _RoundIcon(icon: Icons.calendar_month_outlined, onTap: () {}),
+                _RoundIcon(
+                  icon: Icons.calendar_month_outlined,
+                  onTap: _openCalendarMenu,
+                ),
                 const Spacer(),
                 Column(
                   children: [
@@ -463,7 +494,46 @@ class _StatsScreenState extends State<StatsScreen> {
                   ],
                 ),
                 const Spacer(),
-                _RoundIcon(icon: Icons.search, onTap: () {}),
+                _RoundIcon(
+                  icon: Icons.search,
+                  onTap: () async {
+                    final result = await showSearch<_InsightData?>(
+                      context: context,
+                      delegate: _InsightSearchDelegate(insightsData),
+                    );
+
+                    if (result != null && mounted) {
+                      showModalBottomSheet(
+                        context: context,
+                        showDragHandle: true,
+                        builder: (_) => SafeArea(
+                          child: Padding(
+                            padding: const EdgeInsets.all(18),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  result.title,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  result.subtitle,
+                                  style: const TextStyle(fontWeight: FontWeight.w600),
+                                ),
+                                const SizedBox(height: 10),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    }
+                  },
+                ),
               ],
             ),
 
@@ -500,11 +570,7 @@ class _StatsScreenState extends State<StatsScreen> {
                 ),
                 _FilterChip(
                   label: "Dates: ${filters["Dates"]}",
-                  onTap: () => _showQuickPick(
-                    title: "Dates",
-                    options: const ["Last 7d", "Last 30d", "This Month", "Custom"],
-                    onSelect: (v) => setState(() => filters["Dates"] = v),
-                  ),
+                  onTap: () => _openCalendarMenu(),
                 ),
                 _FilterChip(
                   label: "Type: ${filters["Type"]}",
@@ -519,7 +585,7 @@ class _StatsScreenState extends State<StatsScreen> {
 
             const SizedBox(height: 16),
 
-            // Pie / Donut card (like the reference)
+            // Pie / Donut card
             Card(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 18, 16, 16),
@@ -555,8 +621,7 @@ class _StatsScreenState extends State<StatsScreen> {
                         ],
                       ),
                     ),
-                    const SizedBox(height  : 6),
-                    // Legend (2 columns like the reference)
+                    const SizedBox(height: 6),
                     Wrap(
                       spacing: 16,
                       runSpacing: 10,
@@ -668,35 +733,12 @@ class _StatsScreenState extends State<StatsScreen> {
 
             const SizedBox(height: 8),
 
-            // Insights list (like reference)
-            const InsightTile(
-              icon: Icons.coffee_rounded,
-              iconBg: Color(0xFFFFF1E7),
-              iconColor: Color(0xFFF97316),
-              titleBold: "You spent ",
-              highlight: "15% more",
-              titleRest: " on Coffee this week than your average.",
-              subtitle: "That’s about \$12.50 extra.",
-            ),
-            const SizedBox(height: 12),
-            const InsightTile(
-              icon: Icons.check_circle_rounded,
-              iconBg: Color(0xFFE9FFF9),
-              iconColor: Color(0xFF10B981),
-              titleBold: "Great job! You are ",
-              highlight: "\$200 under",
-              titleRest: " your dining budget this month.",
-              subtitle: "Keep it up to reach your savings goal.",
-            ),
-            const SizedBox(height: 12),
-            const InsightTile(
-              icon: Icons.notifications_active_rounded,
-              iconBg: Color(0xFFE8F0FF),
-              iconColor: Color(0xFF3B82F6),
-              titleBold: "Subscription Alert: ",
-              highlight: "Netflix",
-              titleRest: " increased by \$2.00 starting next cycle.",
-              subtitle: "Detected in your recurring payments.",
+            // Insights list (from insightsData so search matches)
+            ...insightsData.map(
+              (x) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _InsightCard(data: x),
+              ),
             ),
 
             const SizedBox(height: 90),
@@ -705,6 +747,117 @@ class _StatsScreenState extends State<StatsScreen> {
       ),
     );
   }
+
+  // ---------- Calendar menu + pickers ----------
+
+  Future<void> _openCalendarMenu() async {
+    await showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      builder: (_) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.date_range),
+                title: const Text(
+                  "Select date range",
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+                onTap: () async {
+                  Navigator.pop(context);
+                  await _pickDateRange();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.today),
+                title: const Text(
+                  "Select single date",
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+                onTap: () async {
+                  Navigator.pop(context);
+                  await _pickSingleDate();
+                },
+              ),
+              if (selectedRange != null || selectedSingleDate != null)
+                ListTile(
+                  leading: const Icon(Icons.clear),
+                  title: const Text(
+                    "Clear date filter",
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    setState(() {
+                      selectedRange = null;
+                      selectedSingleDate = null;
+                      filters["Dates"] = "Last 30d";
+                    });
+                  },
+                ),
+              const SizedBox(height: 10),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _pickDateRange() async {
+    final now = DateTime.now();
+    final initial = selectedRange ??
+        DateTimeRange(
+          start: DateTime(now.year, now.month, 1),
+          end: now,
+        );
+
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(now.year - 5),
+      lastDate: DateTime(now.year + 1),
+      initialDateRange: initial,
+      helpText: "Select date range",
+    );
+
+    if (picked != null) {
+      setState(() {
+        selectedRange = picked;
+        selectedSingleDate = null;
+        filters["Dates"] = "${_fmt(picked.start)} - ${_fmt(picked.end)}";
+      });
+    }
+  }
+
+  Future<void> _pickSingleDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: selectedSingleDate ?? now,
+      firstDate: DateTime(now.year - 5),
+      lastDate: DateTime(now.year + 1),
+      helpText: "Select a date",
+    );
+
+    if (picked != null) {
+      setState(() {
+        selectedSingleDate = picked;
+        selectedRange = null;
+        filters["Dates"] = _fmt(picked);
+      });
+    }
+  }
+
+  String _fmt(DateTime d) {
+    const months = [
+      "Jan","Feb","Mar","Apr","May","Jun",
+      "Jul","Aug","Sep","Oct","Nov","Dec"
+    ];
+    return "${d.day} ${months[d.month - 1]}, ${d.year}";
+  }
+
+  // ---------- Filter picker ----------
 
   Future<void> _showQuickPick({
     required String title,
@@ -740,19 +893,150 @@ class _StatsScreenState extends State<StatsScreen> {
   }
 }
 
-// ---------- Helper widgets for Stats screen ----------
+// ----------------- Insights search + card -----------------
+
+class _InsightData {
+  final IconData icon;
+  final Color iconBg;
+  final Color iconColor;
+  final String title;
+  final String subtitle;
+
+  const _InsightData({
+    required this.icon,
+    required this.iconBg,
+    required this.iconColor,
+    required this.title,
+    required this.subtitle,
+  });
+}
+
+class _InsightCard extends StatelessWidget {
+  final _InsightData data;
+  const _InsightCard({required this.data});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          children: [
+            Container(
+              width: 46,
+              height: 46,
+              decoration: BoxDecoration(
+                color: data.iconBg,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Icon(data.icon, color: data.iconColor),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    data.title,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      height: 1.25,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    "",
+                    style: TextStyle(fontSize: 0),
+                  ),
+                  Text(
+                    data.subtitle,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF64748B),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _InsightSearchDelegate extends SearchDelegate<_InsightData?> {
+  final List<_InsightData> items;
+  _InsightSearchDelegate(this.items);
+
+  @override
+  String get searchFieldLabel => "Search insights...";
+
+  @override
+  List<Widget>? buildActions(BuildContext context) => [
+        if (query.isNotEmpty)
+          IconButton(
+            icon: const Icon(Icons.clear),
+            onPressed: () => query = "",
+          ),
+      ];
+
+  @override
+  Widget? buildLeading(BuildContext context) => IconButton(
+        icon: const Icon(Icons.arrow_back),
+        onPressed: () => close(context, null),
+      );
+
+  @override
+  Widget buildResults(BuildContext context) {
+    final results = _filter();
+    return ListView(
+      children: results
+          .map((x) => ListTile(
+                title: Text(x.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                subtitle: Text(x.subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
+                onTap: () => close(context, x),
+              ))
+          .toList(),
+    );
+  }
+
+  @override
+  Widget buildSuggestions(BuildContext context) {
+    final results = _filter();
+    return ListView(
+      children: results
+          .map((x) => ListTile(
+                title: Text(x.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                subtitle: Text(x.subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
+                onTap: () => close(context, x),
+              ))
+          .toList(),
+    );
+  }
+
+  List<_InsightData> _filter() {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return items;
+    return items
+        .where((x) =>
+            x.title.toLowerCase().contains(q) ||
+            x.subtitle.toLowerCase().contains(q))
+        .toList();
+  }
+}
+
+// ----------------- UI helpers used by StatsScreen -----------------
 
 class _RangeTabs extends StatelessWidget {
   final int selectedIndex;
   final ValueChanged<int> onChanged;
-
   const _RangeTabs({required this.selectedIndex, required this.onChanged});
 
   @override
   Widget build(BuildContext context) {
     final teal = const Color(0xFF29D6C7);
     final muted = const Color(0xFF64748B);
-
     final labels = const ["Daily", "Weekly", "Monthly", "Yearly"];
 
     return Row(
@@ -793,7 +1077,6 @@ class _RangeTabs extends StatelessWidget {
 class _FilterChip extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
-
   const _FilterChip({required this.label, required this.onTap});
 
   @override
@@ -853,84 +1136,6 @@ class _MiniComparisonBars extends StatelessWidget {
             color: c,
             borderRadius: BorderRadius.circular(10),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class InsightTile extends StatelessWidget {
-  final IconData icon;
-  final Color iconBg;
-  final Color iconColor;
-  final String titleBold;
-  final String highlight;
-  final String titleRest;
-  final String subtitle;
-
-  const InsightTile({
-    super.key,
-    required this.icon,
-    required this.iconBg,
-    required this.iconColor,
-    required this.titleBold,
-    required this.highlight,
-    required this.titleRest,
-    required this.subtitle,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final textDark = const Color(0xFF0F172A);
-    final muted = const Color(0xFF64748B);
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Row(
-          children: [
-            Container(
-              width: 46,
-              height: 46,
-              decoration: BoxDecoration(
-                color: iconBg,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Icon(icon, color: iconColor),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  RichText(
-                    text: TextSpan(
-                      style: TextStyle(
-                        color: textDark,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 14,
-                        height: 1.25,
-                      ),
-                      children: [
-                        TextSpan(text: titleBold),
-                        TextSpan(
-                          text: highlight,
-                          style: const TextStyle(
-                            color: Color(0xFF29D6C7),
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                        TextSpan(text: titleRest),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(subtitle,
-                      style: TextStyle(color: muted, fontWeight: FontWeight.w600)),
-                ],
-              ),
-            ),
-          ],
         ),
       ),
     );
@@ -1026,6 +1231,7 @@ class _LegendDot extends StatelessWidget {
     );
   }
 }
+
 
 class _RoundIcon extends StatelessWidget {
   final IconData icon;
