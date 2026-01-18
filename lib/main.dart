@@ -307,7 +307,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
             // HERO (swipeable across accounts) + mini category bars
             SizedBox(
-              height: 180, // tune if needed
+              height: 210, // tune if needed
               child: PageView.builder(
                 controller: _acctController, // make sure you added this in state
                 itemCount: accounts.length,   // All + individual banks
@@ -328,7 +328,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           color: acc.accentBg, // subtle tint per account (optional)
                           borderRadius: BorderRadius.circular(20),
                         ),
-                        padding: const EdgeInsets.all(16),
+                        padding: const EdgeInsets.all(14),
                         child: Row(
                           children: [
                             // Left: account label + big spend
@@ -375,7 +375,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                       letterSpacing: -1,
                                     ),
                                   ),
-                                  const SizedBox(height: 10),
+                                  // const SizedBox(height: 10),
+                                  const Spacer(),
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                                     decoration: BoxDecoration(
@@ -558,9 +559,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
             _QuickConfirmCarousel(
               items: visiblePending.take(5).toList(),
-              onYes: (txn) => _saveCategory(txn, "Groceries"),
-              onNo: (txn) => _categorizeTxn(txn),
+              onConfirm: (txn) => _saveCategory(txn, "Groceries"),
+              onEdit: (txn) => _categorizeTxn(txn), // opens rename + category sheet
             ),
+
 
             const SizedBox(height: 18),
 
@@ -1121,13 +1123,13 @@ class _PendingDismissTile extends StatelessWidget {
 
 class _QuickConfirmCarousel extends StatefulWidget {
   final List<_PendingTxn> items;
-  final void Function(_PendingTxn) onYes;
-  final void Function(_PendingTxn) onNo;
+  final void Function(_PendingTxn) onConfirm;
+  final void Function(_PendingTxn) onEdit;
 
   const _QuickConfirmCarousel({
     required this.items,
-    required this.onYes,
-    required this.onNo,
+    required this.onConfirm,
+    required this.onEdit,
   });
 
   @override
@@ -1138,97 +1140,133 @@ class _QuickConfirmCarouselState extends State<_QuickConfirmCarousel> {
   final PageController _pc = PageController(viewportFraction: 0.92);
   int page = 0;
 
-  // @override
-  // void dispose() {
-  //   _pc.dispose();
-  //   super.dispose();
-  // }
-
+  @override
+  void dispose() {
+    _pc.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    if (widget.items.isEmpty) {
-      return const SizedBox.shrink();
-    }
+    if (widget.items.isEmpty) return const SizedBox.shrink();
 
     final teal = const Color(0xFF29D6C7);
-    final muted = const Color(0xFF64748B);
 
     return Column(
       children: [
         SizedBox(
-          height: 108,
+          height: 150, // fixed height prevents bottom overflow
           child: PageView.builder(
             controller: _pc,
             onPageChanged: (i) => setState(() => page = i),
             itemCount: widget.items.length,
             itemBuilder: (_, i) {
               final x = widget.items[i];
+
               return Padding(
-                padding: const EdgeInsets.only(right: 10),
+                padding: const EdgeInsets.only(right: 12),
                 child: Card(
                   child: Padding(
                     padding: const EdgeInsets.all(14),
-                    child: ClipRect(
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: RichText(
-                              text: TextSpan(
-                                style: const TextStyle(color: Color(0xFF0F172A)),
-                                children: [
-                                  const TextSpan(
-                                    text: "Confirm: ",
-                                    style: TextStyle(fontWeight: FontWeight.w900),
-                                  ),
-                                  TextSpan(
-                                    text: "-\$${x.amount.toStringAsFixed(2)} ",
-                                    style: const TextStyle(fontWeight: FontWeight.w900),
-                                  ),
-                                  TextSpan(
-                                    text: "to ${x.to} • ${x.time}\n",
-                                    style: TextStyle(fontWeight: FontWeight.w800, color: muted),
-                                  ),
-                                  const TextSpan(
-                                    text: "Groceries?",
-                                    style: TextStyle(fontWeight: FontWeight.w900),
-                                  ),
-                                ],
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // top row: merchant + amount (safe)
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                x.merchant,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 15,
+                                ),
                               ),
                             ),
+                            const SizedBox(width: 10),
+                            Text(
+                              "-\$${x.amount.toStringAsFixed(2)}",
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w900,
+                                fontSize: 15,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+
+                        // time row
+                        Text(
+                          x.time,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xFF64748B),
+                            fontWeight: FontWeight.w700,
                           ),
-                          const SizedBox(width: 10),
-                          Column(
-                            children: [
-                              SizedBox(
-                                height: 36,
-                                child: ElevatedButton(
-                                  onPressed: () => widget.onYes(x),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: teal,
-                                    foregroundColor: Colors.black,
-                                    elevation: 0,
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+
+                        const Spacer(),
+
+                        // bottom row: suggested chip + actions (safe)
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 10,
+                          alignment: WrapAlignment.start,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: teal.withOpacity(0.12),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: const Text(
+                                "Suggested: Groceries",
+                                style: TextStyle(fontWeight: FontWeight.w900),
+                              ),
+                            ),
+                            const Spacer(),
+                            SizedBox(
+                              height: 36,
+                              child: ElevatedButton(
+                                onPressed: () => widget.onConfirm(x),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: teal,
+                                  foregroundColor: Colors.black,
+                                  elevation: 0,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
                                   ),
-                                  child: const Text("Yes", style: TextStyle(fontWeight: FontWeight.w900)),
+                                ),
+                                child: const Text(
+                                  "Confirm",
+                                  style: TextStyle(fontWeight: FontWeight.w900),
                                 ),
                               ),
-                              const SizedBox(height: 8),
-                              SizedBox(
-                                height: 36,
-                                child: OutlinedButton(
-                                  onPressed: () => widget.onNo(x),
-                                  style: OutlinedButton.styleFrom(
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                    side: const BorderSide(color: Color(0xFFE5E7EB)),
+                            ),
+                            const SizedBox(width: 8),
+                            SizedBox(
+                              height: 36,
+                              child: OutlinedButton(
+                                onPressed: () => widget.onEdit(x),
+                                style: OutlinedButton.styleFrom(
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
                                   ),
-                                  child: const Text("No", style: TextStyle(fontWeight: FontWeight.w900)),
+                                  side: const BorderSide(color: Color(0xFFE5E7EB)),
+                                ),
+                                child: const Text(
+                                  "Edit",
+                                  style: TextStyle(fontWeight: FontWeight.w900),
                                 ),
                               ),
-                            ],
-                          )
-                        ],
-                      ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -1236,7 +1274,10 @@ class _QuickConfirmCarouselState extends State<_QuickConfirmCarousel> {
             },
           ),
         ),
+
         const SizedBox(height: 8),
+
+        // dots
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: List.generate(widget.items.length, (i) {
@@ -1254,67 +1295,6 @@ class _QuickConfirmCarouselState extends State<_QuickConfirmCarousel> {
           }),
         ),
       ],
-    );
-  }
-}
-
-class _TargetVsUsageCard extends StatelessWidget {
-  final String title;
-  final String leftTitle;
-  final String rightTitle;
-  final List<_PieSlice> leftSlices;
-  final List<_PieSlice> rightSlices;
-  final String subtitle;
-
-  const _TargetVsUsageCard({
-    required this.title,
-    required this.leftTitle,
-    required this.rightTitle,
-    required this.leftSlices,
-    required this.rightSlices,
-    required this.subtitle,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final textDark = const Color(0xFF0F172A);
-    final muted = const Color(0xFF64748B);
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: textDark)),
-            const SizedBox(height: 6),
-            Text(subtitle, style: TextStyle(color: muted, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    children: [
-                      Text(leftTitle, style: TextStyle(color: muted, fontWeight: FontWeight.w900)),
-                      const SizedBox(height: 10),
-                      _DonutChart(slices: leftSlices),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: Column(
-                    children: [
-                      Text(rightTitle, style: TextStyle(color: muted, fontWeight: FontWeight.w900)),
-                      const SizedBox(height: 10),
-                      _DonutChart(slices: rightSlices),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
