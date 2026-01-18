@@ -103,11 +103,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   // Pending (Yet to Transponse) queue
   final List<_PendingTxn> pending = [
-    _PendingTxn(merchant: "Starbucks Coffee", amount: 5.50, time: "18 Jan • 12:02 PM", to: "YYYY"),
-    _PendingTxn(merchant: "Whole Foods", amount: 84.20, time: "18 Jan • 02:10 PM", to: "YYYY"),
-    _PendingTxn(merchant: "Shell Gas Station", amount: 42.10, time: "18 Jan • 07:30 AM", to: "YYYY"),
-    _PendingTxn(merchant: "Amazon", amount: 29.99, time: "17 Jan • 08:12 PM", to: "YYYY"),
-    _PendingTxn(merchant: "Target", amount: 64.20, time: "17 Jan • 05:40 PM", to: "YYYY"),
+    _PendingTxn(accountId: "chase_checking", merchant: "Starbucks Coffee", amount: 5.50, time: "18 Jan • 12:02 PM", to: "YYYY"),
+    _PendingTxn(accountId: "chase_checking", merchant: "Whole Foods", amount: 84.20, time: "18 Jan • 02:10 PM", to: "YYYY"),
+    _PendingTxn(accountId: "chase_checking", merchant: "Shell Gas Station", amount: 42.10, time: "18 Jan • 07:30 AM", to: "YYYY"),
+    _PendingTxn(accountId: "amex_credit", merchant: "Amazon", amount: 29.99, time: "17 Jan • 08:12 PM", to: "YYYY"),
+    _PendingTxn(accountId: "ally_savings", merchant: "Target", amount: 64.20, time: "17 Jan • 05:40 PM", to: "YYYY"),
   ];
 
   // Insights (Home-only)
@@ -152,6 +152,92 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   double get _todaySpend => 1240.50;
   double get _monthSpend => 3240.50;
+
+  int activeAccountIndex = 0;
+  final PageController _acctController = PageController(viewportFraction: 0.92);
+
+  final List<_HomeAccount> accounts = const [
+    _HomeAccount(
+      id: "all",
+      title: "All Accounts",
+      subtitle: "Aggregated",
+      accentBg: Color(0xFFE9FFF9),
+    ),
+    _HomeAccount(
+      id: "chase_checking",
+      title: "Chase Checking",
+      subtitle: "•••• 1234",
+      accentBg: Color(0xFFEFF2FF),
+    ),
+    _HomeAccount(
+      id: "ally_savings",
+      title: "Ally Savings",
+      subtitle: "•••• 5678",
+      accentBg: Color(0xFFF0FDF4),
+    ),
+    _HomeAccount(
+      id: "amex_credit",
+      title: "Amex Credit",
+      subtitle: "•••• 9012",
+      accentBg: Color(0xFFFFF1F2),
+    ),
+  ];
+
+  String get activeAccountId => accounts[activeAccountIndex].id;
+
+  List<_PendingTxn> get visiblePending {
+    if (activeAccountId == "all") return pending;
+    return pending.where((x) => x.accountId == activeAccountId).toList();
+  }
+
+  double _heroAmountFor(String accountId, _ScopeMode scope) {
+    if (scope == _ScopeMode.monthly) {
+      switch (accountId) {
+        case "all": return 3240.50;
+        case "chase_checking": return 1420.20;
+        case "ally_savings": return 680.00;
+        case "amex_credit": return 1140.30;
+        default: return 0;
+      }
+    } else {
+      switch (accountId) {
+        case "all": return 1240.50;
+        case "chase_checking": return 420.20;
+        case "ally_savings": return 180.00;
+        case "amex_credit": return 640.30;
+        default: return 0;
+      }
+    }
+  }
+
+  List<_MiniCatBar> _miniBarsFor(String accountId) {
+    switch (accountId) {
+      case "chase_checking":
+        return const [
+          _MiniCatBar(label: "Food", value: 0.70),
+          _MiniCatBar(label: "Bills", value: 0.25),
+          _MiniCatBar(label: "Fuel", value: 0.55),
+        ];
+      case "ally_savings":
+        return const [
+          _MiniCatBar(label: "Bills", value: 0.65),
+          _MiniCatBar(label: "Food", value: 0.20),
+          _MiniCatBar(label: "Other", value: 0.35),
+        ];
+      case "amex_credit":
+        return const [
+          _MiniCatBar(label: "Shopping", value: 0.75),
+          _MiniCatBar(label: "Food", value: 0.40),
+          _MiniCatBar(label: "Travel", value: 0.30),
+        ];
+      default:
+        return const [
+          _MiniCatBar(label: "Food", value: 0.75),
+          _MiniCatBar(label: "Bills", value: 0.35),
+          _MiniCatBar(label: "Fuel", value: 0.55),
+        ];
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -219,101 +305,166 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
             const SizedBox(height: 14),
 
-            // HERO + mini category bars (matches sketch: big card + small chart)
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    // Left: big spend
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            heroTitle,
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: muted,
-                              fontWeight: FontWeight.w700,
+            // HERO (swipeable across accounts) + mini category bars
+            SizedBox(
+              height: 180, // tune if needed
+              child: PageView.builder(
+                controller: _acctController, // make sure you added this in state
+                itemCount: accounts.length,   // All + individual banks
+                onPageChanged: (i) => setState(() => activeAccountIndex = i),
+                itemBuilder: (_, i) {
+                  final acc = accounts[i];
+
+                  // Use your existing scopeMode and compute data per account
+                  final title = scopeMode == _ScopeMode.daily ? "Today’s spending" : "Spent this month";
+                  final amount = _heroAmountFor(acc.id, scopeMode);
+                  final bars = _miniBarsFor(acc.id);
+
+                  return Padding(
+                    padding: EdgeInsets.only(right: i == accounts.length - 1 ? 0 : 12),
+                    child: Card(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: acc.accentBg, // subtle tint per account (optional)
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        padding: const EdgeInsets.all(16),
+                        child: Row(
+                          children: [
+                            // Left: account label + big spend
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  // account title
+                                  Text(
+                                    acc.title,
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w900,
+                                      color: textDark,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    acc.subtitle,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: muted,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+
+                                  const SizedBox(height: 14),
+
+                                  Text(
+                                    title,
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: muted,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Text(
+                                    "\$${amount.toStringAsFixed(2)}",
+                                    style: TextStyle(
+                                      fontSize: 34,
+                                      fontWeight: FontWeight.w900,
+                                      color: textDark,
+                                      letterSpacing: -1,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                    decoration: BoxDecoration(
+                                      color: teal.withOpacity(0.12),
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.trending_down_rounded, size: 18, color: teal),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          scopeMode == _ScopeMode.daily ? "-3% vs yesterday" : "-5% vs last month",
+                                          style: TextStyle(color: teal, fontWeight: FontWeight.w800),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 10),
-                          Text(
-                            "\$${heroAmount.toStringAsFixed(2)}",
-                            style: TextStyle(
-                              fontSize: 34,
-                              fontWeight: FontWeight.w900,
-                              color: textDark,
-                              letterSpacing: -1,
+
+                            const SizedBox(width: 14),
+
+                            // Right: mini bars (Top categories)
+                            SizedBox(
+                              width: 130,
+                              child: _MiniCategoryBars(bars: bars),
                             ),
-                          ),
-                          const SizedBox(height: 10),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: teal.withOpacity(0.12),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.trending_down_rounded, size: 18, color: teal),
-                                const SizedBox(width: 6),
-                                Text(
-                                  scopeMode == _ScopeMode.daily ? "-3% vs yesterday" : "-5% vs last month",
-                                  style: TextStyle(color: teal, fontWeight: FontWeight.w800),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
-
-                    const SizedBox(width: 14),
-
-                    // Right: mini bars (cat1/cat2/cat3)
-                    SizedBox(
-                      width: 130,
-                      child: _MiniCategoryBars(bars: miniBars),
-                    ),
-                  ],
-                ),
+                  );
+                },
               ),
             ),
 
-            const SizedBox(height: 16),
+            const SizedBox(height: 10),
+
+            // dots indicator (optional but recommended)
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(accounts.length, (i) {
+                final active = i == activeAccountIndex;
+                return AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  width: active ? 18 : 7,
+                  height: 7,
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  decoration: BoxDecoration(
+                    color: active ? teal : const Color(0xFFE2E8F0),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                );
+              }),
+            ),
+
+            // const SizedBox(height: 16),
 
             // Account chips (keep your existing idea)
-            SizedBox(
-              height: 48,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                children: [
-                  _AccountChip(
-                    label: "All Accounts",
-                    icon: Icons.account_balance_wallet_outlined,
-                    selected: selectedAccountChip == 0,
-                    onTap: () => setState(() => selectedAccountChip = 0),
-                  ),
-                  const SizedBox(width: 12),
-                  _AccountChip(
-                    label: "Savings",
-                    icon: Icons.account_balance_outlined,
-                    selected: selectedAccountChip == 1,
-                    onTap: () => setState(() => selectedAccountChip = 1),
-                  ),
-                  const SizedBox(width: 12),
-                  _AccountChip(
-                    label: "Credit",
-                    icon: Icons.credit_card_outlined,
-                    selected: selectedAccountChip == 2,
-                    onTap: () => setState(() => selectedAccountChip = 2),
-                  ),
-                ],
-              ),
-            ),
+            // SizedBox(
+            //   height: 48,
+            //   child: ListView(
+            //     scrollDirection: Axis.horizontal,
+            //     children: [
+            //       _AccountChip(
+            //         label: "All Accounts",
+            //         icon: Icons.account_balance_wallet_outlined,
+            //         selected: selectedAccountChip == 0,
+            //         onTap: () => setState(() => selectedAccountChip = 0),
+            //       ),
+            //       const SizedBox(width: 12),
+            //       _AccountChip(
+            //         label: "Savings",
+            //         icon: Icons.account_balance_outlined,
+            //         selected: selectedAccountChip == 1,
+            //         onTap: () => setState(() => selectedAccountChip = 1),
+            //       ),
+            //       const SizedBox(width: 12),
+            //       _AccountChip(
+            //         label: "Credit",
+            //         icon: Icons.credit_card_outlined,
+            //         selected: selectedAccountChip == 2,
+            //         onTap: () => setState(() => selectedAccountChip = 2),
+            //       ),
+            //     ],
+            //   ),
+            // ),
 
             const SizedBox(height: 18),
 
@@ -326,14 +477,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
                 const Spacer(),
                 Text(
-                  "${pending.length} pending",
+                  "${visiblePending.length} pending",
                   style: TextStyle(color: muted, fontWeight: FontWeight.w700),
                 ),
               ],
             ),
             const SizedBox(height: 10),
 
-            if (pending.isEmpty)
+            if (visiblePending.isEmpty)
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(16),
@@ -357,16 +508,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   padding: const EdgeInsets.all(12),
                   child: Column(
                     children: [
-                      for (int i = 0; i < (pending.length > 3 ? 3 : pending.length); i++)
+                      for (int i = 0; i < (visiblePending.length > 3 ? 3 : visiblePending.length); i++)
                         Padding(
                           padding: const EdgeInsets.only(bottom: 10),
                           child: _PendingDismissTile(
-                            txn: pending[i],
-                            onCategorize: () => _categorizeTxn(pending[i]),
-                            onSnooze: () => _snoozeTxn(pending[i]),
+                            txn: visiblePending[i],
+                            onCategorize: () => _categorizeTxn(visiblePending[i]),
+                            onSnooze: () => _snoozeTxn(visiblePending[i]),
                           ),
                         ),
-                      if (pending.length > 3)
+                      if (visiblePending.length > 3)
                         InkWell(
                           borderRadius: BorderRadius.circular(999),
                           onTap: () => _showAllPending(),
@@ -377,7 +528,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               borderRadius: BorderRadius.circular(999),
                             ),
                             child: Text(
-                              "Show ${pending.length - 3} more",
+                              "Show ${visiblePending.length - 3} more",
                               style: TextStyle(color: teal, fontWeight: FontWeight.w900),
                             ),
                           ),
@@ -406,7 +557,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             const SizedBox(height: 10),
 
             _QuickConfirmCarousel(
-              items: pending.take(5).toList(),
+              items: visiblePending.take(5).toList(),
               onYes: (txn) => _saveCategory(txn, "Groceries"),
               onNo: (txn) => _categorizeTxn(txn),
             ),
@@ -414,13 +565,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
             const SizedBox(height: 18),
 
             // Daily Target vs Usage (two donuts) on HOME
-            _TargetVsUsageCard(
-              title: "Daily Target vs Usage",
-              leftTitle: "Target",
-              rightTitle: "Usage",
-              leftSlices: _targetSlices,
-              rightSlices: _actualSlices,
-              subtitle: "You’re \$18 under today’s target. Biggest spend: Food.",
+            _BudgetVsActualCard(
+              title: "Target vs Actual",
+              rows: const [
+                _BudgetActualRow(label: "Food", budget: 35, actual: 42),
+                _BudgetActualRow(label: "Bills", budget: 30, actual: 28),
+                _BudgetActualRow(label: "Fuel", budget: 20, actual: 18),
+                _BudgetActualRow(label: "Shopping", budget: 15, actual: 22),
+              ],
+              footer: "You’re over on Shopping. Under on Bills & Fuel.",
             ),
 
             const SizedBox(height: 18),
@@ -467,7 +620,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               amount: "-\$18.40",
               category: "UNCATEGORIZED",
               onFix: () {
-                if (pending.isNotEmpty) _categorizeTxn(pending.first);
+                if (visiblePending.isNotEmpty) _categorizeTxn(visiblePending.first);
               },
             ),
 
@@ -479,15 +632,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _categorizeTxn(_PendingTxn txn) async {
-    final picked = await showModalBottomSheet<String>(
-      context: context,
-      showDragHandle: true,
-      builder: (_) => _ConfirmBottomSheet(merchant: txn.merchant),
-    );
+    final result = await showModalBottomSheet<String>(
+    context: context,
+    showDragHandle: true,
+    builder: (_) => _ConfirmBottomSheet(merchant: txn.merchant),
+  );
 
-    if (picked != null && mounted) {
-      _saveCategory(txn, picked);
-    }
+  if (result != null && mounted) {
+    final parts = result.split("|||");
+    final newName = parts.first;
+    final category = parts.length > 1 ? parts[1] : "Other";
+
+    setState(() {
+      // ✅ If you want, store the renamed label on the txn in your model later
+      pending.remove(txn);
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text("Saved: $newName → $category")),
+    );
+  }
   }
 
   void _saveCategory(_PendingTxn txn, String category) {
@@ -533,13 +697,191 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 }
 
+class _BudgetActualRow {
+  final String label;
+  final double budget;
+  final double actual;
+
+  const _BudgetActualRow({
+    required this.label,
+    required this.budget,
+    required this.actual,
+  });
+}
+
+class _BudgetVsActualCard extends StatelessWidget {
+  final String title;
+  final List<_BudgetActualRow> rows;
+  final String footer;
+
+  const _BudgetVsActualCard({
+    required this.title,
+    required this.rows,
+    required this.footer,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final textDark = const Color(0xFF0F172A);
+    final muted = const Color(0xFF64748B);
+
+    // scale to the max value so bars look proportional
+    final maxV = rows.fold<double>(0, (m, r) => [
+          m,
+          r.budget,
+          r.actual,
+        ].reduce((a, b) => a > b ? a : b));
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: textDark)),
+            const SizedBox(height: 12),
+
+            // header labels
+            Row(
+              children: [
+                const SizedBox(width: 92),
+                Expanded(
+                  child: Text("Budget", style: TextStyle(color: muted, fontWeight: FontWeight.w800)),
+                ),
+                Expanded(
+                  child: Text("Actual", style: TextStyle(color: muted, fontWeight: FontWeight.w800)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+
+            for (final r in rows) ...[
+              _BudgetVsActualRowView(row: r, maxV: maxV),
+              const SizedBox(height: 12),
+            ],
+
+            const SizedBox(height: 2),
+            Text(footer, style: TextStyle(color: muted, fontWeight: FontWeight.w700)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _BudgetVsActualRowView extends StatelessWidget {
+  final _BudgetActualRow row;
+  final double maxV;
+
+  const _BudgetVsActualRowView({
+    required this.row,
+    required this.maxV,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final teal = const Color(0xFF29D6C7);
+    final budgetColor = const Color(0xFFCBD5E1); // soft gray
+    final textDark = const Color(0xFF0F172A);
+    final muted = const Color(0xFF64748B);
+
+    double w(double v) => (v / (maxV == 0 ? 1 : maxV)).clamp(0.0, 1.0);
+
+    return Row(
+      children: [
+        SizedBox(
+          width: 92,
+          child: Text(
+            row.label,
+            style: TextStyle(color: muted, fontWeight: FontWeight.w900),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+
+        // Budget bar
+        Expanded(
+          child: Stack(
+            children: [
+              Container(
+                height: 22,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF2F6),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+              FractionallySizedBox(
+                widthFactor: w(row.budget),
+                child: Container(
+                  height: 22,
+                  decoration: BoxDecoration(
+                    color: budgetColor,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+              ),
+              Positioned.fill(
+                child: Align(
+                  alignment: Alignment.center,
+                  child: Text(
+                    "\$${row.budget.toStringAsFixed(0)}",
+                    style: TextStyle(color: textDark, fontWeight: FontWeight.w900, fontSize: 12),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(width: 12),
+
+        // Actual bar
+        Expanded(
+          child: Stack(
+            children: [
+              Container(
+                height: 22,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF2F6),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+              FractionallySizedBox(
+                widthFactor: w(row.actual),
+                child: Container(
+                  height: 22,
+                  decoration: BoxDecoration(
+                    color: teal,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+              ),
+              Positioned.fill(
+                child: Align(
+                  alignment: Alignment.center,
+                  child: Text(
+                    "\$${row.actual.toStringAsFixed(0)}",
+                    style: TextStyle(color: Colors.black, fontWeight: FontWeight.w900, fontSize: 12),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+
 class _PendingTxn {
+  final String accountId;
   final String merchant;
   final double amount;
   final String time;
   final String to;
 
   const _PendingTxn({
+    required this.accountId,
     required this.merchant,
     required this.amount,
     required this.time,
@@ -608,39 +950,41 @@ class _MiniCategoryBars extends StatelessWidget {
         for (final b in bars)
           Padding(
             padding: const EdgeInsets.only(bottom: 10),
-            child: Row(
-              children: [
-                SizedBox(
-                  width: 44,
-                  child: Text(
-                    b.label,
-                    style: TextStyle(color: muted, fontWeight: FontWeight.w800, fontSize: 12),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Container(
-                    height: 10,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEFF2F6),
-                      borderRadius: BorderRadius.circular(999),
+            child: ClipRect(
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 44,
+                    child: Text(
+                      b.label,
+                      style: TextStyle(color: muted, fontWeight: FontWeight.w800, fontSize: 12),
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: FractionallySizedBox(
-                        widthFactor: b.value.clamp(0.0, 1.0),
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: teal.withOpacity(0.85),
-                            borderRadius: BorderRadius.circular(999),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Container(
+                      height: 10,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEFF2F6),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: FractionallySizedBox(
+                          widthFactor: b.value.clamp(0.0, 1.0),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: teal.withOpacity(0.85),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
       ],
@@ -676,12 +1020,16 @@ class _PendingDismissTile extends StatelessWidget {
           color: teal.withOpacity(0.16),
           borderRadius: BorderRadius.circular(18),
         ),
-        child: Row(
-          children: [
-            Icon(Icons.check_circle_rounded, color: teal),
-            const SizedBox(width: 10),
-            Text("Categorize", style: TextStyle(color: teal, fontWeight: FontWeight.w900)),
-          ],
+        child: ClipRect(
+          child: Row(
+            children: [
+              Icon(Icons.check_circle_rounded, color: teal),
+              const SizedBox(width: 10),
+              Flexible(
+                child: Text("Categorize", style: TextStyle(color: teal, fontWeight: FontWeight.w900), overflow: TextOverflow.ellipsis),
+              ),
+            ],
+          ),
         ),
       ),
       secondaryBackground: Container(
@@ -691,13 +1039,17 @@ class _PendingDismissTile extends StatelessWidget {
           color: const Color(0xFFF43F5E).withOpacity(0.10),
           borderRadius: BorderRadius.circular(18),
         ),
-        child: const Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            Icon(Icons.snooze_rounded, color: Color(0xFFF43F5E)),
-            SizedBox(width: 10),
-            Text("Later", style: TextStyle(color: Color(0xFFF43F5E), fontWeight: FontWeight.w900)),
-          ],
+        child: ClipRect(
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              const Icon(Icons.snooze_rounded, color: Color(0xFFF43F5E)),
+              const SizedBox(width: 10),
+              Flexible(
+                child: Text("Later", style: const TextStyle(color: Color(0xFFF43F5E), fontWeight: FontWeight.w900), overflow: TextOverflow.ellipsis),
+              ),
+            ],
+          ),
         ),
       ),
       confirmDismiss: (direction) async {
@@ -786,11 +1138,12 @@ class _QuickConfirmCarouselState extends State<_QuickConfirmCarousel> {
   final PageController _pc = PageController(viewportFraction: 0.92);
   int page = 0;
 
-  @override
-  void dispose() {
-    _pc.dispose();
-    super.dispose();
-  }
+  // @override
+  // void dispose() {
+  //   _pc.dispose();
+  //   super.dispose();
+  // }
+
 
   @override
   Widget build(BuildContext context) {
@@ -816,64 +1169,66 @@ class _QuickConfirmCarouselState extends State<_QuickConfirmCarousel> {
                 child: Card(
                   child: Padding(
                     padding: const EdgeInsets.all(14),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: RichText(
-                            text: TextSpan(
-                              style: const TextStyle(color: Color(0xFF0F172A)),
-                              children: [
-                                const TextSpan(
-                                  text: "Confirm: ",
-                                  style: TextStyle(fontWeight: FontWeight.w900),
-                                ),
-                                TextSpan(
-                                  text: "-\$${x.amount.toStringAsFixed(2)} ",
-                                  style: const TextStyle(fontWeight: FontWeight.w900),
-                                ),
-                                TextSpan(
-                                  text: "to ${x.to} • ${x.time}\n",
-                                  style: TextStyle(fontWeight: FontWeight.w800, color: muted),
-                                ),
-                                const TextSpan(
-                                  text: "Groceries?",
-                                  style: TextStyle(fontWeight: FontWeight.w900),
-                                ),
-                              ],
+                    child: ClipRect(
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: RichText(
+                              text: TextSpan(
+                                style: const TextStyle(color: Color(0xFF0F172A)),
+                                children: [
+                                  const TextSpan(
+                                    text: "Confirm: ",
+                                    style: TextStyle(fontWeight: FontWeight.w900),
+                                  ),
+                                  TextSpan(
+                                    text: "-\$${x.amount.toStringAsFixed(2)} ",
+                                    style: const TextStyle(fontWeight: FontWeight.w900),
+                                  ),
+                                  TextSpan(
+                                    text: "to ${x.to} • ${x.time}\n",
+                                    style: TextStyle(fontWeight: FontWeight.w800, color: muted),
+                                  ),
+                                  const TextSpan(
+                                    text: "Groceries?",
+                                    style: TextStyle(fontWeight: FontWeight.w900),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 10),
-                        Column(
-                          children: [
-                            SizedBox(
-                              height: 36,
-                              child: ElevatedButton(
-                                onPressed: () => widget.onYes(x),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: teal,
-                                  foregroundColor: Colors.black,
-                                  elevation: 0,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          const SizedBox(width: 10),
+                          Column(
+                            children: [
+                              SizedBox(
+                                height: 36,
+                                child: ElevatedButton(
+                                  onPressed: () => widget.onYes(x),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: teal,
+                                    foregroundColor: Colors.black,
+                                    elevation: 0,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  ),
+                                  child: const Text("Yes", style: TextStyle(fontWeight: FontWeight.w900)),
                                 ),
-                                child: const Text("Yes", style: TextStyle(fontWeight: FontWeight.w900)),
                               ),
-                            ),
-                            const SizedBox(height: 8),
-                            SizedBox(
-                              height: 36,
-                              child: OutlinedButton(
-                                onPressed: () => widget.onNo(x),
-                                style: OutlinedButton.styleFrom(
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                  side: const BorderSide(color: Color(0xFFE5E7EB)),
+                              const SizedBox(height: 8),
+                              SizedBox(
+                                height: 36,
+                                child: OutlinedButton(
+                                  onPressed: () => widget.onNo(x),
+                                  style: OutlinedButton.styleFrom(
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                    side: const BorderSide(color: Color(0xFFE5E7EB)),
+                                  ),
+                                  child: const Text("No", style: TextStyle(fontWeight: FontWeight.w900)),
                                 ),
-                                child: const Text("No", style: TextStyle(fontWeight: FontWeight.w900)),
                               ),
-                            ),
-                          ],
-                        )
-                      ],
+                            ],
+                          )
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -963,6 +1318,20 @@ class _TargetVsUsageCard extends StatelessWidget {
     );
   }
 }
+
+class _HomeAccount {
+  final String id;
+  final String title;
+  final String subtitle;
+  final Color accentBg;
+  const _HomeAccount({
+    required this.id,
+    required this.title,
+    required this.subtitle,
+    required this.accentBg,
+  });
+}
+
 
 class _TodayTxnRow extends StatelessWidget {
   final String time;
@@ -2927,7 +3296,6 @@ class _ConfirmTile extends StatelessWidget {
     );
   }
 }
-
 class _ConfirmBottomSheet extends StatefulWidget {
   final String merchant;
   const _ConfirmBottomSheet({required this.merchant});
@@ -2937,7 +3305,21 @@ class _ConfirmBottomSheet extends StatefulWidget {
 }
 
 class _ConfirmBottomSheetState extends State<_ConfirmBottomSheet> {
-  String? selected;
+  String? selectedCategory;
+  late final TextEditingController _name;
+
+  @override
+  void initState() {
+    super.initState();
+    // default name = merchant, user can edit
+    _name = TextEditingController(text: widget.merchant);
+  }
+
+  @override
+  void dispose() {
+    _name.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2951,6 +3333,8 @@ class _ConfirmBottomSheetState extends State<_ConfirmBottomSheet> {
       "Other",
     ];
 
+    final canSave = selectedCategory != null && _name.text.trim().isNotEmpty;
+
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(18, 8, 18, 18),
@@ -2959,23 +3343,39 @@ class _ConfirmBottomSheetState extends State<_ConfirmBottomSheet> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              "What was this purchase for?",
+              "Confirm transaction",
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
             ),
             const SizedBox(height: 6),
             Text(
-              widget.merchant,
-              style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF64748B)),
+              "Edit the name and pick a category.",
+              style: TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF64748B)),
             ),
+
             const SizedBox(height: 14),
+
+            // Name input
+            TextField(
+              controller: _name,
+              onChanged: (_) => setState(() {}),
+              decoration: InputDecoration(
+                labelText: "Transaction name",
+                filled: true,
+                fillColor: Colors.white,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+              ),
+            ),
+
+            const SizedBox(height: 14),
+
             Wrap(
               spacing: 10,
               runSpacing: 10,
               children: options.map((o) {
-                final isSel = selected == o;
+                final isSel = selectedCategory == o;
                 return InkWell(
                   borderRadius: BorderRadius.circular(999),
-                  onTap: () => setState(() => selected = o),
+                  onTap: () => setState(() => selectedCategory = o),
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                     decoration: BoxDecoration(
@@ -2988,12 +3388,21 @@ class _ConfirmBottomSheetState extends State<_ConfirmBottomSheet> {
                 );
               }).toList(),
             ),
+
             const SizedBox(height: 14),
+
             SizedBox(
               width: double.infinity,
               height: 52,
               child: ElevatedButton(
-                onPressed: selected == null ? null : () => Navigator.pop(context, selected),
+                onPressed: canSave
+                    ? () {
+                        Navigator.pop(
+                          context,
+                          "${_name.text.trim()}|||${selectedCategory!}",
+                        );
+                      }
+                    : null,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: teal,
                   foregroundColor: Colors.black,
