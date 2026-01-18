@@ -84,7 +84,7 @@ class _MainShellState extends State<MainShell> {
     );
   }
 }
-
+//Below is the code for Dashboard or Homepage 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
 
@@ -92,28 +92,75 @@ class DashboardScreen extends StatefulWidget {
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
+enum _AccountMode { debit, credit }
+enum _ScopeMode { daily, monthly }
+
 class _DashboardScreenState extends State<DashboardScreen> {
   int selectedAccountChip = 0;
-  bool showAllConfirm = false;
 
-  // UI-only data (replace with backend later)
-  final List<_ConfirmItem> confirmItems = const [
-    _ConfirmItem(merchant: "Starbucks Coffee", amount: "-\$5.50", time: "Today, 09:45 AM"),
-    _ConfirmItem(merchant: "Shell Gas Station", amount: "-\$42.10", time: "Today, 07:30 AM"),
-    _ConfirmItem(merchant: "Amazon", amount: "-\$29.99", time: "Yesterday, 08:12 PM"),
-    _ConfirmItem(merchant: "Target", amount: "-\$64.20", time: "Yesterday, 05:40 PM"),
-    _ConfirmItem(merchant: "Apple.com/Bill", amount: "-\$9.99", time: "24 Oct, 2023"),
+  _AccountMode accountMode = _AccountMode.debit;
+  _ScopeMode scopeMode = _ScopeMode.daily;
+
+  // Pending (Yet to Transponse) queue
+  final List<_PendingTxn> pending = [
+    _PendingTxn(merchant: "Starbucks Coffee", amount: 5.50, time: "18 Jan • 12:02 PM", to: "YYYY"),
+    _PendingTxn(merchant: "Whole Foods", amount: 84.20, time: "18 Jan • 02:10 PM", to: "YYYY"),
+    _PendingTxn(merchant: "Shell Gas Station", amount: 42.10, time: "18 Jan • 07:30 AM", to: "YYYY"),
+    _PendingTxn(merchant: "Amazon", amount: 29.99, time: "17 Jan • 08:12 PM", to: "YYYY"),
+    _PendingTxn(merchant: "Target", amount: 64.20, time: "17 Jan • 05:40 PM", to: "YYYY"),
   ];
-  List<_ConfirmItem> _visibleConfirmItems() {
-  if (showAllConfirm) return confirmItems;
-  return confirmItems.take(3).toList();
-}
+
+  // Insights (Home-only)
+  final List<_InsightData> homeInsights = const [
+    _InsightData(
+      icon: Icons.coffee_rounded,
+      iconBg: Color(0xFFFFF1E7),
+      iconColor: Color(0xFFF97316),
+      title: "You spent 15% more on Coffee today than your average.",
+      subtitle: "That’s about \$2–\$5 extra.",
+    ),
+    _InsightData(
+      icon: Icons.check_circle_rounded,
+      iconBg: Color(0xFFE9FFF9),
+      iconColor: Color(0xFF10B981),
+      title: "Nice! You’re under today’s target.",
+      subtitle: "Keep it up to hit your weekly goal.",
+    ),
+  ];
+
+  // Fake category breakdown for the top mini-bars (today)
+  final List<_MiniCatBar> miniBars = const [
+    _MiniCatBar(label: "Food", value: 0.75),
+    _MiniCatBar(label: "Bills", value: 0.35),
+    _MiniCatBar(label: "Fuel", value: 0.55),
+  ];
+
+  // Fake donut data: Target vs Actual (daily)
+  List<_PieSlice> get _targetSlices => const [
+        _PieSlice("Food", 0.35, Color(0xFF29D6C7)),
+        _PieSlice("Bills", 0.30, Color(0xFF1F2937)),
+        _PieSlice("Fuel", 0.20, Color(0xFF334155)),
+        _PieSlice("Other", 0.15, Color(0xFF111827)),
+      ];
+
+  List<_PieSlice> get _actualSlices => const [
+        _PieSlice("Food", 0.45, Color(0xFF29D6C7)),
+        _PieSlice("Bills", 0.25, Color(0xFF1F2937)),
+        _PieSlice("Fuel", 0.15, Color(0xFF334155)),
+        _PieSlice("Other", 0.15, Color(0xFF111827)),
+      ];
+
+  double get _todaySpend => 1240.50;
+  double get _monthSpend => 3240.50;
 
   @override
   Widget build(BuildContext context) {
     final teal = const Color(0xFF29D6C7);
     final textDark = const Color(0xFF0F172A);
     final muted = const Color(0xFF64748B);
+
+    final heroTitle = scopeMode == _ScopeMode.daily ? "Today’s spending" : "Spent this month";
+    final heroAmount = scopeMode == _ScopeMode.daily ? _todaySpend : _monthSpend;
 
     return SafeArea(
       child: SingleChildScrollView(
@@ -124,10 +171,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             // Top bar: avatar, title, bell
             Row(
               children: [
-                _RoundIcon(
-                  icon: Icons.person,
-                  onTap: () {},
-                ),
+                _RoundIcon(icon: Icons.person, onTap: () {}),
                 const Spacer(),
                 Text(
                   "Dashboard",
@@ -138,68 +182,110 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                 ),
                 const Spacer(),
-                _RoundIcon(
-                  icon: Icons.notifications_none_rounded,
-                  onTap: () {},
+                _RoundIcon(icon: Icons.notifications_none_rounded, onTap: () {}),
+              ],
+            ),
+
+            const SizedBox(height: 14),
+
+            // Debit / Daily toggle row (your sketch)
+            Row(
+              children: [
+                _PillToggle(
+                  label: "Debit",
+                  selected: accountMode == _AccountMode.debit,
+                  onTap: () => setState(() => accountMode = _AccountMode.debit),
+                ),
+                const SizedBox(width: 10),
+                _PillToggle(
+                  label: "Credit",
+                  selected: accountMode == _AccountMode.credit,
+                  onTap: () => setState(() => accountMode = _AccountMode.credit),
+                ),
+                const Spacer(),
+                _PillToggle(
+                  label: "Daily",
+                  selected: scopeMode == _ScopeMode.daily,
+                  onTap: () => setState(() => scopeMode = _ScopeMode.daily),
+                ),
+                const SizedBox(width: 10),
+                _PillToggle(
+                  label: "Monthly",
+                  selected: scopeMode == _ScopeMode.monthly,
+                  onTap: () => setState(() => scopeMode = _ScopeMode.monthly),
                 ),
               ],
             ),
 
-            const SizedBox(height: 22),
+            const SizedBox(height: 14),
 
-            // Center spending hero
-            Center(
-              child: Column(
-                children: [
-                  Text(
-                    "Spent this month",
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: muted,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    "\$3,240.50",
-                    style: TextStyle(
-                      fontSize: 42,
-                      fontWeight: FontWeight.w900,
-                      color: textDark,
-                      letterSpacing: -1,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: teal.withOpacity(0.12),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.trending_down_rounded,
-                            size: 18, color: teal),
-                        const SizedBox(width: 6),
-                        Text(
-                          "-5% from last month",
-                          style: TextStyle(
-                            color: teal,
-                            fontWeight: FontWeight.w700,
+            // HERO + mini category bars (matches sketch: big card + small chart)
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    // Left: big spend
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            heroTitle,
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: muted,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 10),
+                          Text(
+                            "\$${heroAmount.toStringAsFixed(2)}",
+                            style: TextStyle(
+                              fontSize: 34,
+                              fontWeight: FontWeight.w900,
+                              color: textDark,
+                              letterSpacing: -1,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: teal.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.trending_down_rounded, size: 18, color: teal),
+                                const SizedBox(width: 6),
+                                Text(
+                                  scopeMode == _ScopeMode.daily ? "-3% vs yesterday" : "-5% vs last month",
+                                  style: TextStyle(color: teal, fontWeight: FontWeight.w800),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+
+                    const SizedBox(width: 14),
+
+                    // Right: mini bars (cat1/cat2/cat3)
+                    SizedBox(
+                      width: 130,
+                      child: _MiniCategoryBars(bars: miniBars),
+                    ),
+                  ],
+                ),
               ),
             ),
 
-            const SizedBox(height: 18),
+            const SizedBox(height: 16),
 
-            // Account chips row
+            // Account chips (keep your existing idea)
             SizedBox(
               height: 48,
               child: ListView(
@@ -229,188 +315,61 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
             ),
 
-            const SizedBox(height: 22),
-
-            // Category Breakdown header
-            Row(
-              children: [
-                Text(
-                  "Category Breakdown",
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                    color: textDark,
-                  ),
-                ),
-                const Spacer(),
-                TextButton(
-                  onPressed: () {},
-                  child: Text(
-                    "View Stats",
-                    style: TextStyle(
-                      color: teal,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                )
-              ],
-            ),
-
-            const SizedBox(height: 10),
-
-            // Category cards row
-            SizedBox(
-              height: 128,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                children: const [
-                  CategoryCard(
-                    icon: Icons.restaurant_rounded,
-                    iconBg: Color(0xFFFFF1E7),
-                    iconColor: Color(0xFFF97316),
-                    title: "Food",
-                    amount: "\$840.00",
-                  ),
-                  SizedBox(width: 14),
-                  CategoryCard(
-                    icon: Icons.directions_car_rounded,
-                    iconBg: Color(0xFFE8F0FF),
-                    iconColor: Color(0xFF3B82F6),
-                    title: "Transport",
-                    amount: "\$320.50",
-                  ),
-                  SizedBox(width: 14),
-                  CategoryCard(
-                    icon: Icons.shopping_bag_rounded,
-                    iconBg: Color(0xFFF3E8FF),
-                    iconColor: Color(0xFF8B5CF6),
-                    title: "Shopping",
-                    amount: "\$1,120.00",
-                  ),
-                ],
-              ),
-            ),
-
             const SizedBox(height: 18),
 
-            // Spending Trend card
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Text(
-                          "Spending Trend",
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w800,
-                            color: textDark,
-                          ),
-                        ),
-                        const Spacer(),
-                        Row(
-                          children: [
-                            Icon(Icons.calendar_month_outlined,
-                                size: 16, color: teal),
-                            const SizedBox(width: 6),
-                            Text(
-                              "30 Days",
-                              style: TextStyle(
-                                color: teal,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ],
-                        )
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      "Daily average \$108.00",
-                      style: TextStyle(color: muted, fontWeight: FontWeight.w500),
-                    ),
-                    const SizedBox(height: 14),
-                    const _MiniBarChart(),
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: const [
-                        _AxisLabel("1 OCT"),
-                        _AxisLabel("10 OCT"),
-                        _AxisLabel("20 OCT"),
-                        _AxisLabel("31 OCT"),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 22),
-            const SizedBox(height: 22),
-
-            // Confirm Purchases header
+            // Yet to Transponse (pending queue)
             Row(
               children: [
                 Text(
-                  "Confirm Purchases",
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                    color: textDark,
-                  ),
+                  "Yet to Transponse",
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: textDark),
                 ),
                 const Spacer(),
-                TextButton(
-                  onPressed: () => setState(() => showAllConfirm = !showAllConfirm),
-                  child: Text(
-                    showAllConfirm ? "Show Less" : "See All",
-                    style: TextStyle(
-                      color: teal,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
+                Text(
+                  "${pending.length} pending",
+                  style: TextStyle(color: muted, fontWeight: FontWeight.w700),
                 ),
               ],
             ),
-
             const SizedBox(height: 10),
 
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  children: [
-                    ..._visibleConfirmItems().map(
-                      (item) => Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: _ConfirmTile(
-                          item: item,
-                          onConfirm: () async {
-                            final result = await showModalBottomSheet<String>(
-                              context: context,
-                              showDragHandle: true,
-                              builder: (_) => _ConfirmBottomSheet(merchant: item.merchant),
-                            );
-
-                            if (result != null && mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text("Saved: ${item.merchant} → $result")),
-                              );
-                            }
-                          },
+            if (pending.isEmpty)
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.check_circle_rounded, color: Color(0xFF10B981)),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          "All caught up. No pending transactions.",
+                          style: TextStyle(color: textDark, fontWeight: FontWeight.w800),
                         ),
                       ),
-                    ),
-                    if (!showAllConfirm && confirmItems.length > 3)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 6),
-                        child: InkWell(
+                    ],
+                  ),
+                ),
+              )
+            else
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    children: [
+                      for (int i = 0; i < (pending.length > 3 ? 3 : pending.length); i++)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: _PendingDismissTile(
+                            txn: pending[i],
+                            onCategorize: () => _categorizeTxn(pending[i]),
+                            onSnooze: () => _snoozeTxn(pending[i]),
+                          ),
+                        ),
+                      if (pending.length > 3)
+                        InkWell(
                           borderRadius: BorderRadius.circular(999),
-                          onTap: () => setState(() => showAllConfirm = true),
+                          onTap: () => _showAllPending(),
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                             decoration: BoxDecoration(
@@ -418,69 +377,659 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               borderRadius: BorderRadius.circular(999),
                             ),
                             child: Text(
-                              "Show ${confirmItems.length - 3} more",
+                              "Show ${pending.length - 3} more",
                               style: TextStyle(color: teal, fontWeight: FontWeight.w900),
                             ),
                           ),
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
 
-            // Recent Transactions header
+            const SizedBox(height: 18),
+
+            // A little help! (swipeable Yes/No prompt)
             Row(
               children: [
                 Text(
-                  "Recent Transactions",
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                    color: textDark,
-                  ),
+                  "A little help!",
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: textDark),
                 ),
                 const Spacer(),
-                TextButton(
-                  onPressed: () {},
-                  child: Text(
-                    "See All",
-                    style: TextStyle(color: teal, fontWeight: FontWeight.w800),
-                  ),
+                Text(
+                  "Swipe",
+                  style: TextStyle(color: muted, fontWeight: FontWeight.w700),
                 ),
               ],
             ),
-
             const SizedBox(height: 10),
 
-            // Recent transactions list
-            const TransactionTile(
-              icon: Icons.coffee_rounded,
-              title: "Starbucks Coffee",
-              subtitle: "Today, 09:45 AM",
-              amount: "-\$5.50",
+            _QuickConfirmCarousel(
+              items: pending.take(5).toList(),
+              onYes: (txn) => _saveCategory(txn, "Groceries"),
+              onNo: (txn) => _categorizeTxn(txn),
             ),
+
+            const SizedBox(height: 18),
+
+            // Daily Target vs Usage (two donuts) on HOME
+            _TargetVsUsageCard(
+              title: "Daily Target vs Usage",
+              leftTitle: "Target",
+              rightTitle: "Usage",
+              leftSlices: _targetSlices,
+              rightSlices: _actualSlices,
+              subtitle: "You’re \$18 under today’s target. Biggest spend: Food.",
+            ),
+
+            const SizedBox(height: 18),
+
+            // Insights Today (Home-only)
+            Row(
+              children: [
+                Text(
+                  "Insights Today",
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: textDark),
+                ),
+                const Spacer(),
+                TextButton(
+                  onPressed: () {
+                    // Later: navigate to full insights
+                  },
+                  child: Text("View All", style: TextStyle(color: teal, fontWeight: FontWeight.w900)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+
+            ...homeInsights.map((x) => Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: _InsightCard(data: x),
+                )),
+
             const SizedBox(height: 12),
-            const TransactionTile(
-              icon: Icons.shopping_cart_rounded,
-              title: "Whole Foods Market",
-              subtitle: "Yesterday, 06:20 PM",
-              amount: "-\$84.20",
+
+            // Today's Transactions list (with category chip like your sketch)
+            Text(
+              "Today’s Transactions",
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: textDark),
             ),
+            const SizedBox(height: 10),
+
+            _TodayTxnRow(time: "12:02 PM", merchant: "Starbucks Coffee", amount: "-\$5.50", category: "FOOD"),
             const SizedBox(height: 12),
-            const TransactionTile(
-              icon: Icons.play_circle_fill_rounded,
-              title: "Netflix Premium",
-              subtitle: "24 Oct, 2023",
-              amount: "-\$15.99",
+            _TodayTxnRow(time: "02:10 PM", merchant: "PG&E", amount: "-\$120.00", category: "BILLS"),
+            const SizedBox(height: 12),
+            _TodayTxnRow(
+              time: "04:30 PM",
+              merchant: "Unknown Merchant",
+              amount: "-\$18.40",
+              category: "UNCATEGORIZED",
+              onFix: () {
+                if (pending.isNotEmpty) _categorizeTxn(pending.first);
+              },
             ),
-            const SizedBox(height: 90), // space above bottom nav + FAB
+
+            const SizedBox(height: 90),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _categorizeTxn(_PendingTxn txn) async {
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => _ConfirmBottomSheet(merchant: txn.merchant),
+    );
+
+    if (picked != null && mounted) {
+      _saveCategory(txn, picked);
+    }
+  }
+
+  void _saveCategory(_PendingTxn txn, String category) {
+    setState(() {
+      pending.remove(txn);
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text("Saved: ${txn.merchant} → $category")),
+    );
+  }
+
+  void _snoozeTxn(_PendingTxn txn) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text("Snoozed: ${txn.merchant}")),
+    );
+  }
+
+  Future<void> _showAllPending() async {
+    final teal = const Color(0xFF29D6C7);
+    await showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(18, 6, 18, 18),
+          children: [
+            const Text("All Pending", style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 12),
+            for (final x in List<_PendingTxn>.from(pending))
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _PendingDismissTile(
+                  txn: x,
+                  onCategorize: () => _categorizeTxn(x),
+                  onSnooze: () => _snoozeTxn(x),
+                  accent: teal,
+                ),
+              ),
           ],
         ),
       ),
     );
   }
 }
+
+class _PendingTxn {
+  final String merchant;
+  final double amount;
+  final String time;
+  final String to;
+
+  const _PendingTxn({
+    required this.merchant,
+    required this.amount,
+    required this.time,
+    required this.to,
+  });
+}
+
+class _MiniCatBar {
+  final String label;
+  final double value; // 0..1
+  const _MiniCatBar({required this.label, required this.value});
+}
+
+class _PillToggle extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _PillToggle({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final teal = const Color(0xFF29D6C7);
+    final border = const Color(0xFFE5E7EB);
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(999),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: selected ? teal : Colors.white,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: selected ? teal : border),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontWeight: FontWeight.w900,
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MiniCategoryBars extends StatelessWidget {
+  final List<_MiniCatBar> bars;
+  const _MiniCategoryBars({required this.bars});
+
+  @override
+  Widget build(BuildContext context) {
+    final teal = const Color(0xFF29D6C7);
+    final muted = const Color(0xFF64748B);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text("Top categories", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12)),
+        const SizedBox(height: 10),
+        for (final b in bars)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 44,
+                  child: Text(
+                    b.label,
+                    style: TextStyle(color: muted, fontWeight: FontWeight.w800, fontSize: 12),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Container(
+                    height: 10,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEFF2F6),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: FractionallySizedBox(
+                        widthFactor: b.value.clamp(0.0, 1.0),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: teal.withOpacity(0.85),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _PendingDismissTile extends StatelessWidget {
+  final _PendingTxn txn;
+  final VoidCallback onCategorize;
+  final VoidCallback onSnooze;
+  final Color? accent;
+
+  const _PendingDismissTile({
+    required this.txn,
+    required this.onCategorize,
+    required this.onSnooze,
+    this.accent,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final teal = accent ?? const Color(0xFF29D6C7);
+    final textDark = const Color(0xFF0F172A);
+    final muted = const Color(0xFF64748B);
+
+    return Dismissible(
+      key: ValueKey("${txn.merchant}-${txn.time}-${txn.amount}"),
+      background: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        alignment: Alignment.centerLeft,
+        decoration: BoxDecoration(
+          color: teal.withOpacity(0.16),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.check_circle_rounded, color: teal),
+            const SizedBox(width: 10),
+            Text("Categorize", style: TextStyle(color: teal, fontWeight: FontWeight.w900)),
+          ],
+        ),
+      ),
+      secondaryBackground: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        alignment: Alignment.centerRight,
+        decoration: BoxDecoration(
+          color: const Color(0xFFF43F5E).withOpacity(0.10),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: const Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            Icon(Icons.snooze_rounded, color: Color(0xFFF43F5E)),
+            SizedBox(width: 10),
+            Text("Later", style: TextStyle(color: Color(0xFFF43F5E), fontWeight: FontWeight.w900)),
+          ],
+        ),
+      ),
+      confirmDismiss: (direction) async {
+        if (direction == DismissDirection.startToEnd) {
+          onCategorize();
+          return false; // keep item until user saves
+        } else {
+          onSnooze();
+          return false;
+        }
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: const Color(0xFFE5E7EB)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 46,
+              height: 46,
+              decoration: BoxDecoration(
+                color: const Color(0xFFEFF2F6),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: const Icon(Icons.help_outline_rounded, color: Color(0xFF334155)),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(txn.merchant, style: TextStyle(color: textDark, fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 4),
+                  Text(txn.time, style: TextStyle(color: muted, fontWeight: FontWeight.w700)),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text("-\$${txn.amount.toStringAsFixed(2)}", style: TextStyle(color: textDark, fontWeight: FontWeight.w900)),
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: 32,
+                  child: ElevatedButton(
+                    onPressed: onCategorize,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: teal,
+                      foregroundColor: Colors.black,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                    ),
+                    child: const Text("Fix", style: TextStyle(fontWeight: FontWeight.w900)),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _QuickConfirmCarousel extends StatefulWidget {
+  final List<_PendingTxn> items;
+  final void Function(_PendingTxn) onYes;
+  final void Function(_PendingTxn) onNo;
+
+  const _QuickConfirmCarousel({
+    required this.items,
+    required this.onYes,
+    required this.onNo,
+  });
+
+  @override
+  State<_QuickConfirmCarousel> createState() => _QuickConfirmCarouselState();
+}
+
+class _QuickConfirmCarouselState extends State<_QuickConfirmCarousel> {
+  final PageController _pc = PageController(viewportFraction: 0.92);
+  int page = 0;
+
+  @override
+  void dispose() {
+    _pc.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.items.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final teal = const Color(0xFF29D6C7);
+    final muted = const Color(0xFF64748B);
+
+    return Column(
+      children: [
+        SizedBox(
+          height: 108,
+          child: PageView.builder(
+            controller: _pc,
+            onPageChanged: (i) => setState(() => page = i),
+            itemCount: widget.items.length,
+            itemBuilder: (_, i) {
+              final x = widget.items[i];
+              return Padding(
+                padding: const EdgeInsets.only(right: 10),
+                child: Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: RichText(
+                            text: TextSpan(
+                              style: const TextStyle(color: Color(0xFF0F172A)),
+                              children: [
+                                const TextSpan(
+                                  text: "Confirm: ",
+                                  style: TextStyle(fontWeight: FontWeight.w900),
+                                ),
+                                TextSpan(
+                                  text: "-\$${x.amount.toStringAsFixed(2)} ",
+                                  style: const TextStyle(fontWeight: FontWeight.w900),
+                                ),
+                                TextSpan(
+                                  text: "to ${x.to} • ${x.time}\n",
+                                  style: TextStyle(fontWeight: FontWeight.w800, color: muted),
+                                ),
+                                const TextSpan(
+                                  text: "Groceries?",
+                                  style: TextStyle(fontWeight: FontWeight.w900),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Column(
+                          children: [
+                            SizedBox(
+                              height: 36,
+                              child: ElevatedButton(
+                                onPressed: () => widget.onYes(x),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: teal,
+                                  foregroundColor: Colors.black,
+                                  elevation: 0,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                ),
+                                child: const Text("Yes", style: TextStyle(fontWeight: FontWeight.w900)),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            SizedBox(
+                              height: 36,
+                              child: OutlinedButton(
+                                onPressed: () => widget.onNo(x),
+                                style: OutlinedButton.styleFrom(
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  side: const BorderSide(color: Color(0xFFE5E7EB)),
+                                ),
+                                child: const Text("No", style: TextStyle(fontWeight: FontWeight.w900)),
+                              ),
+                            ),
+                          ],
+                        )
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: List.generate(widget.items.length, (i) {
+            final active = i == page;
+            return AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              width: active ? 18 : 7,
+              height: 7,
+              margin: const EdgeInsets.symmetric(horizontal: 4),
+              decoration: BoxDecoration(
+                color: active ? teal : const Color(0xFFE2E8F0),
+                borderRadius: BorderRadius.circular(999),
+              ),
+            );
+          }),
+        ),
+      ],
+    );
+  }
+}
+
+class _TargetVsUsageCard extends StatelessWidget {
+  final String title;
+  final String leftTitle;
+  final String rightTitle;
+  final List<_PieSlice> leftSlices;
+  final List<_PieSlice> rightSlices;
+  final String subtitle;
+
+  const _TargetVsUsageCard({
+    required this.title,
+    required this.leftTitle,
+    required this.rightTitle,
+    required this.leftSlices,
+    required this.rightSlices,
+    required this.subtitle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final textDark = const Color(0xFF0F172A);
+    final muted = const Color(0xFF64748B);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: textDark)),
+            const SizedBox(height: 6),
+            Text(subtitle, style: TextStyle(color: muted, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    children: [
+                      Text(leftTitle, style: TextStyle(color: muted, fontWeight: FontWeight.w900)),
+                      const SizedBox(height: 10),
+                      _DonutChart(slices: leftSlices),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: Column(
+                    children: [
+                      Text(rightTitle, style: TextStyle(color: muted, fontWeight: FontWeight.w900)),
+                      const SizedBox(height: 10),
+                      _DonutChart(slices: rightSlices),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TodayTxnRow extends StatelessWidget {
+  final String time;
+  final String merchant;
+  final String amount;
+  final String category;
+  final VoidCallback? onFix;
+
+  const _TodayTxnRow({
+    required this.time,
+    required this.merchant,
+    required this.amount,
+    required this.category,
+    this.onFix,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final textDark = const Color(0xFF0F172A);
+    final muted = const Color(0xFF64748B);
+    final teal = const Color(0xFF29D6C7);
+
+    final isUncat = category.toUpperCase() == "UNCATEGORIZED";
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 70,
+              child: Text(time, style: TextStyle(color: muted, fontWeight: FontWeight.w800)),
+            ),
+            Expanded(
+              child: Text(merchant, style: TextStyle(color: textDark, fontWeight: FontWeight.w900)),
+            ),
+            const SizedBox(width: 10),
+            Text(amount, style: TextStyle(color: textDark, fontWeight: FontWeight.w900)),
+            const SizedBox(width: 12),
+            if (isUncat)
+              SizedBox(
+                height: 34,
+                child: OutlinedButton(
+                  onPressed: onFix,
+                  style: OutlinedButton.styleFrom(
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    side: BorderSide(color: teal),
+                  ),
+                  child: const Text("Fix", style: TextStyle(fontWeight: FontWeight.w900)),
+                ),
+              )
+            else
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: teal.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(category, style: TextStyle(color: textDark, fontWeight: FontWeight.w900)),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 
 // Below is the code for settings screen 
 class SettingsScreen extends StatefulWidget {
