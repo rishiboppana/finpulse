@@ -94,6 +94,20 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   int selectedAccountChip = 0;
+  bool showAllConfirm = false;
+
+  // UI-only data (replace with backend later)
+  final List<_ConfirmItem> confirmItems = const [
+    _ConfirmItem(merchant: "Starbucks Coffee", amount: "-\$5.50", time: "Today, 09:45 AM"),
+    _ConfirmItem(merchant: "Shell Gas Station", amount: "-\$42.10", time: "Today, 07:30 AM"),
+    _ConfirmItem(merchant: "Amazon", amount: "-\$29.99", time: "Yesterday, 08:12 PM"),
+    _ConfirmItem(merchant: "Target", amount: "-\$64.20", time: "Yesterday, 05:40 PM"),
+    _ConfirmItem(merchant: "Apple.com/Bill", amount: "-\$9.99", time: "24 Oct, 2023"),
+  ];
+  List<_ConfirmItem> _visibleConfirmItems() {
+  if (showAllConfirm) return confirmItems;
+  return confirmItems.take(3).toList();
+}
 
   @override
   Widget build(BuildContext context) {
@@ -336,6 +350,84 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
 
             const SizedBox(height: 22),
+            const SizedBox(height: 22),
+
+            // Confirm Purchases header
+            Row(
+              children: [
+                Text(
+                  "Confirm Purchases",
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: textDark,
+                  ),
+                ),
+                const Spacer(),
+                TextButton(
+                  onPressed: () => setState(() => showAllConfirm = !showAllConfirm),
+                  child: Text(
+                    showAllConfirm ? "Show Less" : "See All",
+                    style: TextStyle(
+                      color: teal,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 10),
+
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  children: [
+                    ..._visibleConfirmItems().map(
+                      (item) => Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: _ConfirmTile(
+                          item: item,
+                          onConfirm: () async {
+                            final result = await showModalBottomSheet<String>(
+                              context: context,
+                              showDragHandle: true,
+                              builder: (_) => _ConfirmBottomSheet(merchant: item.merchant),
+                            );
+
+                            if (result != null && mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text("Saved: ${item.merchant} → $result")),
+                              );
+                            }
+                          },
+                        ),
+                      ),
+                    ),
+                    if (!showAllConfirm && confirmItems.length > 3)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(999),
+                          onTap: () => setState(() => showAllConfirm = true),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: teal.withOpacity(0.10),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              "Show ${confirmItems.length - 3} more",
+                              style: TextStyle(color: teal, fontWeight: FontWeight.w900),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
 
             // Recent Transactions header
             Row(
@@ -384,6 +476,710 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
             const SizedBox(height: 90), // space above bottom nav + FAB
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// Below is the code for settings screen 
+class SettingsScreen extends StatefulWidget {
+  const SettingsScreen({super.key});
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  bool budgetNotifications = true;
+  bool biometrics = false;
+
+  String themeLabel = "System";
+
+  @override
+  Widget build(BuildContext context) {
+    final textDark = const Color(0xFF0F172A);
+    final muted = const Color(0xFF64748B);
+    final teal = const Color(0xFF29D6C7);
+
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Top header (like your ref)
+            Row(
+              children: [
+                // If this screen is opened via navigation push, back works.
+                // In bottom-tab root, it won't show (canPop=false), so we show it anyway:
+                InkWell(
+                  borderRadius: BorderRadius.circular(999),
+                  onTap: () {
+                    if (Navigator.canPop(context)) Navigator.pop(context);
+                  },
+                  child: Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEFF2F6),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: const Icon(Icons.arrow_back, color: Color(0xFF334155)),
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  "App Settings",
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                    color: textDark,
+                  ),
+                ),
+                const Spacer(),
+                const SizedBox(width: 44), // balance layout
+              ],
+            ),
+
+            const SizedBox(height: 18),
+
+            // ACCOUNTS
+            const _SettingsSectionTitle("ACCOUNTS"),
+            const SizedBox(height: 10),
+            _SettingsCard(
+              children: [
+                _SettingsNavTile(
+                  icon: Icons.account_balance_rounded,
+                  iconBg: teal.withOpacity(0.12),
+                  iconColor: teal,
+                  title: "Linked Accounts",
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const SelectAccountScreen()),
+                    );
+                  },
+                ),
+                _SettingsNavTile(
+                  icon: Icons.add_circle_outline_rounded,
+                  iconBg: teal.withOpacity(0.12),
+                  iconColor: teal,
+                  title: "Add New Account",
+                  onTap: () {
+                    // Later: open bank-linking flow
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text("Connect bank flow later (backend).")),
+                    );
+                  },
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 18),
+
+            // PERSONALIZATION
+            const _SettingsSectionTitle("PERSONALIZATION"),
+            const SizedBox(height: 10),
+            _SettingsCard(
+              children: [
+                _SettingsNavTile(
+                  icon: Icons.category_rounded,
+                  iconBg: teal.withOpacity(0.12),
+                  iconColor: teal,
+                  title: "Categories",
+                  subtitle: "Add / edit categories",
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const _SimplePlaceholderPage(title: "Categories"),
+                      ),
+                    );
+                  },
+                ),
+                _SettingsNavTile(
+                  icon: Icons.tune_rounded,
+                  iconBg: teal.withOpacity(0.12),
+                  iconColor: teal,
+                  title: "Budgets",
+                  subtitle: "Add new budget, limits & alerts",
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const _SimplePlaceholderPage(title: "Budgets"),
+                      ),
+                    );
+                  },
+                ),
+                _SettingsNavTile(
+                  icon: Icons.color_lens_rounded,
+                  iconBg: teal.withOpacity(0.12),
+                  iconColor: teal,
+                  title: "App Theme",
+                  trailingText: themeLabel,
+                  onTap: () async {
+                    final picked = await _themePicker(context, themeLabel);
+                    if (picked != null) setState(() => themeLabel = picked);
+                  },
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 18),
+
+            // ALERTS & PRIVACY
+            const _SettingsSectionTitle("ALERTS & PRIVACY"),
+            const SizedBox(height: 10),
+            _SettingsCard(
+              children: [
+                _SettingsSwitchTile(
+                  icon: Icons.notifications_active_rounded,
+                  iconBg: teal.withOpacity(0.12),
+                  iconColor: teal,
+                  title: "Budget Notifications",
+                  value: budgetNotifications,
+                  onChanged: (v) => setState(() => budgetNotifications = v),
+                ),
+                _SettingsSwitchTile(
+                  icon: Icons.fingerprint_rounded,
+                  iconBg: teal.withOpacity(0.12),
+                  iconColor: teal,
+                  title: "Security / Biometrics",
+                  subtitle: "Require Face ID to open",
+                  value: biometrics,
+                  onChanged: (v) => setState(() => biometrics = v),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 22),
+
+            // Logout button
+            Card(
+              child: InkWell(
+                borderRadius: BorderRadius.circular(20),
+                onTap: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("Logout action later (backend).")),
+                  );
+                },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 18),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: const [
+                      Icon(Icons.logout_rounded, color: Color(0xFFF43F5E)),
+                      SizedBox(width: 10),
+                      Text(
+                        "Log Out",
+                        style: TextStyle(
+                          color: Color(0xFFF43F5E),
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 16),
+            Center(
+              child: Text(
+                "Version 2.4.1 (Build 108)",
+                style: TextStyle(color: muted, fontWeight: FontWeight.w600),
+              ),
+            ),
+
+            const SizedBox(height: 90),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<String?> _themePicker(BuildContext context, String current) async {
+    const options = ["System", "Light", "Dark"];
+    return showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => SafeArea(
+        child: ListView(
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(18, 10, 18, 8),
+              child: Text("App Theme", style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+            ),
+            for (final opt in options)
+              ListTile(
+                title: Text(opt, style: const TextStyle(fontWeight: FontWeight.w700)),
+                trailing: opt == current ? const Icon(Icons.check) : null,
+                onTap: () => Navigator.pop(context, opt),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class SelectAccountScreen extends StatefulWidget {
+  const SelectAccountScreen({super.key});
+
+  @override
+  State<SelectAccountScreen> createState() => _SelectAccountScreenState();
+}
+
+class _SelectAccountScreenState extends State<SelectAccountScreen> {
+  // UI-only mock data (backend later)
+  int selectedIndex = 0;
+
+  final List<_AccountItem> accounts = const [
+    _AccountItem(
+      title: "All Accounts",
+      subtitle: "Aggregated balance from 4 links",
+      amount: "\$15,050.00",
+      icon: Icons.account_balance_wallet_rounded,
+      isSummary: true,
+    ),
+    _AccountItem(
+      title: "Main Checking",
+      subtitle: "Chase •••• 1234",
+      amount: "\$4,250.00",
+      icon: Icons.account_balance_rounded,
+    ),
+    _AccountItem(
+      title: "Emergency Fund",
+      subtitle: "Ally •••• 5678",
+      amount: "\$12,000.00",
+      icon: Icons.savings_rounded,
+    ),
+    _AccountItem(
+      title: "Travel Visa",
+      subtitle: "Amex •••• 9012",
+      amount: "-\$1,200.00",
+      icon: Icons.credit_card_rounded,
+    ),
+    _AccountItem(
+      title: "Personal Wallet",
+      subtitle: "MetaMask • ETH",
+      amount: "0.00 ETH",
+      icon: Icons.account_balance_wallet_outlined,
+    ),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final teal = const Color(0xFF29D6C7);
+    final textDark = const Color(0xFF0F172A);
+    final muted = const Color(0xFF64748B);
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF7F8FA),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header with back + title
+              Row(
+                children: [
+                  InkWell(
+                    borderRadius: BorderRadius.circular(999),
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEFF2F6),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: const Icon(Icons.arrow_back, color: Color(0xFF334155)),
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    "Select Account",
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                      color: textDark,
+                    ),
+                  ),
+                  const Spacer(),
+                  const SizedBox(width: 44),
+                ],
+              ),
+
+              const SizedBox(height: 18),
+
+              Text("SUMMARY", style: TextStyle(color: muted, fontWeight: FontWeight.w900, letterSpacing: 1.1)),
+              const SizedBox(height: 10),
+
+              _AccountCard(
+                item: accounts[0],
+                selected: selectedIndex == 0,
+                teal: teal,
+                onTap: () => setState(() => selectedIndex = 0),
+              ),
+
+              const SizedBox(height: 18),
+
+              Text("CONNECTED ACCOUNTS", style: TextStyle(color: muted, fontWeight: FontWeight.w900, letterSpacing: 1.1)),
+              const SizedBox(height: 10),
+
+              Expanded(
+                child: ListView.separated(
+                  itemCount: accounts.length - 1,
+                  separatorBuilder: (_, __) => const SizedBox(height: 12),
+                  itemBuilder: (context, i) {
+                    final idx = i + 1;
+                    return _AccountCard(
+                      item: accounts[idx],
+                      selected: selectedIndex == idx,
+                      teal: teal,
+                      onTap: () => setState(() => selectedIndex = idx),
+                    );
+                  },
+                ),
+              ),
+
+              const SizedBox(height: 14),
+
+              // Link new account button
+              SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: teal,
+                    foregroundColor: Colors.black,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                    elevation: 0,
+                  ),
+                  icon: const Icon(Icons.add),
+                  label: const Text(
+                    "Link New Account",
+                    style: TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  onPressed: () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text("Link account flow later (backend).")),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AccountItem {
+  final String title;
+  final String subtitle;
+  final String amount;
+  final IconData icon;
+  final bool isSummary;
+
+  const _AccountItem({
+    required this.title,
+    required this.subtitle,
+    required this.amount,
+    required this.icon,
+    this.isSummary = false,
+  });
+}
+
+class _AccountCard extends StatelessWidget {
+  final _AccountItem item;
+  final bool selected;
+  final Color teal;
+  final VoidCallback onTap;
+
+  const _AccountCard({
+    required this.item,
+    required this.selected,
+    required this.teal,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final textDark = const Color(0xFF0F172A);
+    final muted = const Color(0xFF64748B);
+
+    return Card(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: selected ? teal : Colors.transparent,
+              width: selected ? 2 : 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF2F6),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Icon(item.icon, color: const Color(0xFF334155)),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(item.title, style: TextStyle(color: textDark, fontWeight: FontWeight.w900)),
+                    const SizedBox(height: 4),
+                    Text(item.subtitle, style: TextStyle(color: muted, fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(item.amount, style: TextStyle(color: textDark, fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 6),
+                  if (selected)
+                    Container(
+                      width: 22,
+                      height: 22,
+                      decoration: BoxDecoration(color: teal, shape: BoxShape.circle),
+                      child: const Icon(Icons.check, size: 16, color: Colors.white),
+                    )
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SettingsSectionTitle extends StatelessWidget {
+  final String text;
+  const _SettingsSectionTitle(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      style: const TextStyle(
+        color: Color(0xFF64748B),
+        fontWeight: FontWeight.w900,
+        letterSpacing: 1.1,
+        fontSize: 12,
+      ),
+    );
+  }
+}
+
+class _SettingsCard extends StatelessWidget {
+  final List<Widget> children;
+  const _SettingsCard({required this.children});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(children: children),
+      ),
+    );
+  }
+}
+
+class _SettingsNavTile extends StatelessWidget {
+  final IconData icon;
+  final Color iconBg;
+  final Color iconColor;
+  final String title;
+  final String? subtitle;
+  final String? trailingText;
+  final VoidCallback onTap;
+
+  const _SettingsNavTile({
+    required this.icon,
+    required this.iconBg,
+    required this.iconColor,
+    required this.title,
+    required this.onTap,
+    this.subtitle,
+    this.trailingText,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final textDark = const Color(0xFF0F172A);
+    final muted = const Color(0xFF64748B);
+
+    return ListTile(
+      leading: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: iconBg,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Icon(icon, color: iconColor),
+      ),
+      title: Text(
+        title,
+        style: TextStyle(
+          color: textDark,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+      subtitle: subtitle == null
+          ? null
+          : Text(
+              subtitle!,
+              style: TextStyle(color: muted, fontWeight: FontWeight.w600),
+            ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (trailingText != null)
+            Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: Text(
+                trailingText!,
+                style: const TextStyle(
+                  color: Color(0xFF94A3B8),
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          const Icon(Icons.chevron_right_rounded, color: Color(0xFF94A3B8)),
+        ],
+      ),
+      onTap: onTap,
+    );
+  }
+}
+
+class _SettingsSwitchTile extends StatelessWidget {
+  final IconData icon;
+  final Color iconBg;
+  final Color iconColor;
+  final String title;
+  final String? subtitle;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  const _SettingsSwitchTile({
+    required this.icon,
+    required this.iconBg,
+    required this.iconColor,
+    required this.title,
+    required this.value,
+    required this.onChanged,
+    this.subtitle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final textDark = const Color(0xFF0F172A);
+    final muted = const Color(0xFF64748B);
+
+    return ListTile(
+      leading: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: iconBg,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Icon(icon, color: iconColor),
+      ),
+      title: Text(
+        title,
+        style: TextStyle(
+          color: textDark,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+      subtitle: subtitle == null
+          ? null
+          : Text(
+              subtitle!,
+              style: TextStyle(color: muted, fontWeight: FontWeight.w600),
+            ),
+      trailing: Switch(
+        value: value,
+        onChanged: onChanged,
+      ),
+    );
+  }
+}
+
+class _SimplePlaceholderPage extends StatelessWidget {
+  final String title;
+  const _SimplePlaceholderPage({required this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    final textDark = const Color(0xFF0F172A);
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF7F8FA),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  InkWell(
+                    borderRadius: BorderRadius.circular(999),
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEFF2F6),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: const Icon(Icons.arrow_back, color: Color(0xFF334155)),
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                      color: textDark,
+                    ),
+                  ),
+                  const Spacer(),
+                  const SizedBox(width: 44),
+                ],
+              ),
+              const SizedBox(height: 40),
+              const Text(
+                "UI screen placeholder.\nWe’ll build this next.",
+                textAlign: TextAlign.center,
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1489,6 +2285,176 @@ class PlaceholderScreen extends StatelessWidget {
         child: Text(
           title,
           style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+        ),
+      ),
+    );
+  }
+}
+
+
+class _ConfirmItem {
+  final String merchant;
+  final String amount;
+  final String time;
+  const _ConfirmItem({
+    required this.merchant,
+    required this.amount,
+    required this.time,
+  });
+}
+
+
+class _ConfirmTile extends StatelessWidget {
+  final _ConfirmItem item;
+  final VoidCallback onConfirm;
+
+  const _ConfirmTile({required this.item, required this.onConfirm});
+
+  @override
+  Widget build(BuildContext context) {
+    final textDark = const Color(0xFF0F172A);
+    final muted = const Color(0xFF64748B);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: const Color(0xFFEFF2F6),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Icon(Icons.help_outline_rounded, color: Color(0xFF334155)),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item.merchant,
+                  style: TextStyle(
+                    color: textDark,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 15,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(item.time, style: TextStyle(color: muted, fontWeight: FontWeight.w600)),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(item.amount, style: TextStyle(color: textDark, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 32,
+                child: ElevatedButton(
+                  onPressed: onConfirm,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF29D6C7),
+                    foregroundColor: Colors.black,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                  ),
+                  child: const Text("Confirm", style: TextStyle(fontWeight: FontWeight.w900)),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ConfirmBottomSheet extends StatefulWidget {
+  final String merchant;
+  const _ConfirmBottomSheet({required this.merchant});
+
+  @override
+  State<_ConfirmBottomSheet> createState() => _ConfirmBottomSheetState();
+}
+
+class _ConfirmBottomSheetState extends State<_ConfirmBottomSheet> {
+  String? selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final teal = const Color(0xFF29D6C7);
+    final options = const [
+      "Food / Coffee",
+      "Groceries",
+      "Transport / Fuel",
+      "Shopping",
+      "Bills / Subscription",
+      "Other",
+    ];
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 8, 18, 18),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              "What was this purchase for?",
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              widget.merchant,
+              style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF64748B)),
+            ),
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: options.map((o) {
+                final isSel = selected == o;
+                return InkWell(
+                  borderRadius: BorderRadius.circular(999),
+                  onTap: () => setState(() => selected = o),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: isSel ? teal.withOpacity(0.18) : Colors.white,
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: isSel ? teal : const Color(0xFFE5E7EB)),
+                    ),
+                    child: Text(o, style: const TextStyle(fontWeight: FontWeight.w800)),
+                  ),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton(
+                onPressed: selected == null ? null : () => Navigator.pop(context, selected),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: teal,
+                  foregroundColor: Colors.black,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                ),
+                child: const Text("Save", style: TextStyle(fontWeight: FontWeight.w900)),
+              ),
+            ),
+          ],
         ),
       ),
     );
