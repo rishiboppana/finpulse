@@ -2089,7 +2089,6 @@ class _SimplePlaceholderPage extends StatelessWidget {
 
 
 // Below is the code for stats screen
-
 class StatsScreen extends StatefulWidget {
   const StatsScreen({super.key});
 
@@ -2100,6 +2099,7 @@ class StatsScreen extends StatefulWidget {
 class _StatsScreenState extends State<StatsScreen> {
   // Time range tabs like the reference
   int rangeIndex = 2; // 0 Daily, 1 Weekly, 2 Monthly, 3 Yearly
+  int? selectedBarIndex; // interactive selection
 
   DateTimeRange? selectedRange;
   DateTime? selectedSingleDate;
@@ -2107,10 +2107,13 @@ class _StatsScreenState extends State<StatsScreen> {
   // Filters (UI only for now)
   final Map<String, String> filters = {
     "Accounts": "All",
-    "Category": "All",
+    "Category": "All", // kept for backend compatibility
     "Dates": "Last 30d",
     "Type": "All",
   };
+
+  // ✅ NEW: selected main category for filtering the whole page
+  String selectedMainCategory = "All";
 
   // Searchable insights data (UI only for now)
   final List<_InsightData> insightsData = const [
@@ -2136,6 +2139,189 @@ class _StatsScreenState extends State<StatsScreen> {
       subtitle: "Detected in your recurring payments.",
     ),
   ];
+  String get _rangeLabel {
+  if (selectedRange != null) return "${_fmt(selectedRange!.start)} - ${_fmt(selectedRange!.end)}";
+  if (selectedSingleDate != null) return _fmt(selectedSingleDate!);
+  return switch (rangeIndex) {
+    0 => "Daily",
+    1 => "Weekly",
+    2 => "Monthly",
+    _ => "Yearly",
+  };
+}
+
+// Mock generator (replace with backend later)
+// Generates 12 points by default for the selected rangeIndex
+List<_TimePoint> _buildSeriesFor({
+    required String mainCategory,
+  }) {
+    final now = DateTime.now();
+    final base = DateTime(now.year, 10, 1); // demo "Oct"
+    final values = (seriesByMainCategory[mainCategory] ?? seriesByMainCategory["All"]!) ;
+
+    // Create 12 buckets
+    return List.generate(values.length, (i) {
+      final DateTime s;
+      final DateTime e;
+      String label;
+
+      if (rangeIndex == 0) { // Daily
+        s = base.add(Duration(days: i));
+        e = s;
+        label = "${s.day}";
+      } else if (rangeIndex == 1) { // Weekly
+        s = base.add(Duration(days: i * 7));
+        e = s.add(const Duration(days: 6));
+        label = "W${i + 1}";
+      } else if (rangeIndex == 2) { // Monthly (show days inside month as buckets)
+        s = base.add(Duration(days: i * 2));
+        e = s.add(const Duration(days: 1));
+        label = "Oct ${s.day}";
+      } else { // Yearly (months)
+        s = DateTime(base.year, i + 1, 1);
+        e = DateTime(base.year, i + 2, 0);
+        label = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][i % 12];
+      }
+
+      return _TimePoint(label: label, start: s, end: e, amount: values[i]);
+    });
+  }
+
+  double _totalSpent(List<_TimePoint> pts) => pts.fold(0.0, (a, b) => a + b.amount);
+
+  Widget _TotalSpentHeader({
+    required double total,
+    required String category,
+  }) {
+    final teal = const Color(0xFF29D6C7);
+    final textDark = const Color(0xFF0F172A);
+    final muted = const Color(0xFF64748B);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    "TOTAL SPENT",
+                    style: TextStyle(
+                      color: muted,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.1,
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    "\$${total.toStringAsFixed(2)}",
+                    style: TextStyle(
+                      fontSize: 30,
+                      fontWeight: FontWeight.w900,
+                      color: textDark,
+                      height: 1.0,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    "$category • $_rangeLabel",
+                    style: TextStyle(color: muted, fontWeight: FontWeight.w700),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: teal.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Row(
+                children: const [
+                  Icon(Icons.insights_rounded, size: 18, color: Color(0xFF29D6C7)),
+                  SizedBox(width: 8),
+                  Text("Insights", style: TextStyle(fontWeight: FontWeight.w900)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ----------------------------
+  // UI-only mock data (backend later)
+  // Keep everything in maps so it's easy to replace with API responses.
+  // ----------------------------
+
+  final List<String> mainCategories = const [
+    "All",
+    "Food & Drinks",
+    "Bills",
+    "Fuel",
+    "Shopping",
+    "Transport",
+    "Subscriptions",
+  ];
+
+  // Time-series values (12 points). Interpret based on rangeIndex (Daily/Weekly/Monthly/Yearly).
+  final Map<String, List<double>> seriesByMainCategory = const {
+    "All":          [120, 90, 150, 80, 140, 110, 175, 95, 130, 155, 105, 160],
+    "Food & Drinks":[35,  25,  45,  22,  38,  28,  55,  26,  36,  48,  30,  50],
+    "Bills":        [40,  38,  42,  41,  39,  40,  43,  38,  41,  42,  40,  41],
+    "Fuel":         [18,  12,  20,  14,  17,  16,  22,  13,  18,  19,  12,  16],
+    "Shopping":     [22,  15,  28,  12,  25,  18,  30,  20,  26,  29,  16,  27],
+    "Transport":    [15,  10,  18,  9,   14,  12,  19,  11,  16,  18,  10,  15],
+    "Subscriptions":[10,  10,  10,  10,  12,  10,  12,  10,  10,  12,  10,  10],
+  };
+
+  // Subcategory breakdowns per main category
+  final Map<String, List<_SubSlice>> subcatsByMainCategory = const {
+    "All": [
+      _SubSlice("Groceries", 0.25, Color(0xFF29D6C7)),
+      _SubSlice("Coffee", 0.20, Color(0xFF3B82F6)),
+      _SubSlice("Dining Out", 0.15, Color(0xFFF59E0B)),
+      _SubSlice("Public Transit", 0.15, Color(0xFFEC4899)),
+      _SubSlice("Subscriptions", 0.13, Color(0xFF8B5CF6)),
+      _SubSlice("Pharmacy", 0.12, Color(0xFF10B981)),
+    ],
+    "Food & Drinks": [
+      _SubSlice("Groceries", 0.48, Color(0xFF29D6C7)),
+      _SubSlice("Dining Out", 0.28, Color(0xFFF59E0B)),
+      _SubSlice("Coffee", 0.24, Color(0xFF3B82F6)),
+    ],
+    "Bills": [
+      _SubSlice("Rent", 0.55, Color(0xFF1F2937)),
+      _SubSlice("Utilities", 0.25, Color(0xFF64748B)),
+      _SubSlice("Internet", 0.20, Color(0xFF29D6C7)),
+    ],
+    "Fuel": [
+      _SubSlice("Gas", 0.85, Color(0xFF3B82F6)),
+      _SubSlice("Tolls", 0.15, Color(0xFF29D6C7)),
+    ],
+    "Shopping": [
+      _SubSlice("Amazon", 0.45, Color(0xFF8B5CF6)),
+      _SubSlice("Clothing", 0.35, Color(0xFFEC4899)),
+      _SubSlice("Home", 0.20, Color(0xFF10B981)),
+    ],
+    "Transport": [
+      _SubSlice("Public Transit", 0.65, Color(0xFFEC4899)),
+      _SubSlice("Ride Share", 0.35, Color(0xFF29D6C7)),
+    ],
+    "Subscriptions": [
+      _SubSlice("Netflix", 0.35, Color(0xFF3B82F6)),
+      _SubSlice("Spotify", 0.25, Color(0xFF10B981)),
+      _SubSlice("iCloud", 0.20, Color(0xFF29D6C7)),
+      _SubSlice("Other", 0.20, Color(0xFF64748B)),
+    ],
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -2143,14 +2329,18 @@ class _StatsScreenState extends State<StatsScreen> {
     final textDark = const Color(0xFF0F172A);
     final muted = const Color(0xFF64748B);
 
-    // Fake stats data (later replace from backend)
-    final totalSpent = 3240.50;
-    final pie = [
-      _PieSlice("Housing", 0.45, const Color(0xFF29D6C7)),
-      _PieSlice("Food", 0.25, const Color(0xFF1F2937)),
-      _PieSlice("Transport", 0.15, const Color(0xFF334155)),
-      _PieSlice("Entertainment", 0.15, const Color(0xFF111827)),
-    ];
+    final series = seriesByMainCategory[selectedMainCategory] ??
+        seriesByMainCategory["All"]!;
+    final subSlices = subcatsByMainCategory[selectedMainCategory] ??
+        subcatsByMainCategory["All"]!;
+
+    final double totalSpent = series.fold(0.0, (a, b) => a + b);
+
+    // Filter insights by selected category (simple keyword match for now)
+    final filteredInsights = _filterInsightsByCategory(
+      insightsData,
+      selectedMainCategory,
+    );
 
     return SafeArea(
       child: SingleChildScrollView(
@@ -2193,7 +2383,7 @@ class _StatsScreenState extends State<StatsScreen> {
                   onTap: () async {
                     final result = await showSearch<_InsightData?>(
                       context: context,
-                      delegate: _InsightSearchDelegate(insightsData),
+                      delegate: _InsightSearchDelegate(filteredInsights),
                     );
 
                     if (result != null && mounted) {
@@ -2255,11 +2445,14 @@ class _StatsScreenState extends State<StatsScreen> {
                   ),
                 ),
                 _FilterChip(
-                  label: "Category: ${filters["Category"]}",
+                  label: "Category: $selectedMainCategory",
                   onTap: () => _showQuickPick(
                     title: "Category",
-                    options: const ["All", "Food", "Transport", "Housing"],
-                    onSelect: (v) => setState(() => filters["Category"] = v),
+                    options: mainCategories,
+                    onSelect: (v) => setState(() {
+                      selectedMainCategory = v;
+                      filters["Category"] = v; // keep in sync for backend later
+                    }),
                   ),
                 ),
                 _FilterChip(
@@ -2279,126 +2472,32 @@ class _StatsScreenState extends State<StatsScreen> {
 
             const SizedBox(height: 16),
 
-            // Pie / Donut card
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 18, 16, 16),
-                child: Column(
-                  children: [
-                    SizedBox(
-                      height: 240,
-                      child: Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          _DonutChart(slices: pie),
-                          Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                "Total Spent",
-                                style: TextStyle(
-                                  color: muted,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                "\$${totalSpent.toStringAsFixed(2)}",
-                                style: TextStyle(
-                                  color: textDark,
-                                  fontWeight: FontWeight.w900,
-                                  fontSize: 30,
-                                ),
-                              ),
-                            ],
-                          )
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Wrap(
-                      spacing: 16,
-                      runSpacing: 10,
-                      children: const [
-                        _LegendDot(label: "Housing (45%)", color: Color(0xFF29D6C7)),
-                        _LegendDot(label: "Food (25%)", color: Color(0xFF1F2937)),
-                        _LegendDot(label: "Transport (15%)", color: Color(0xFF334155)),
-                        _LegendDot(label: "Entertainment (15%)", color: Color(0xFF111827)),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
+            // ------------------------
+            // 1) Main category time-series bar chart (tap category to filter)
+            // ------------------------
+            _MainCategoryTrendsCard(
+              title: "MAIN CATEGORY EXPENDITURE",
+              subtitleRight: "Total \$${totalSpent.toStringAsFixed(2)}",
+              categories: mainCategories,
+              selectedCategory: selectedMainCategory,
+              seriesByCategory: seriesByMainCategory,
+              xLabels: _xLabelsFor(rangeIndex),
+              onSelectCategory: (c) => setState(() {
+                selectedMainCategory = c;
+                filters["Category"] = c;
+              }),
             ),
 
             const SizedBox(height: 16),
 
-            // Comparison card
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            "COMPARISON",
-                            style: TextStyle(
-                              color: textDark,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 1.2,
-                              fontSize: 12,
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            "Spent vs. last month",
-                            style: TextStyle(
-                              color: muted,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Text(
-                                "\$284.15",
-                                style: TextStyle(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.w900,
-                                  color: textDark,
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: teal.withOpacity(0.12),
-                                  borderRadius: BorderRadius.circular(999),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.arrow_downward_rounded, size: 16, color: teal),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      "8.2%",
-                                      style: TextStyle(color: teal, fontWeight: FontWeight.w800),
-                                    ),
-                                  ],
-                                ),
-                              )
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 14),
-                    const _MiniComparisonBars(),
-                  ],
-                ),
-              ),
+            // ------------------------
+            // 2) Sub-category breakdown pie chart (filtered)
+            // ------------------------
+            _SubcategoryBreakdownCard(
+              title: "SUB-CATEGORY BREAKDOWN",
+              totalLabel: "TOTAL",
+              totalValue: "\$${totalSpent.toStringAsFixed(2)}",
+              subSlices: subSlices,
             ),
 
             const SizedBox(height: 18),
@@ -2427,8 +2526,8 @@ class _StatsScreenState extends State<StatsScreen> {
 
             const SizedBox(height: 8),
 
-            // Insights list (from insightsData so search matches)
-            ...insightsData.map(
+            // Insights list filtered by selected category
+            ...filteredInsights.map(
               (x) => Padding(
                 padding: const EdgeInsets.only(bottom: 12),
                 child: _InsightCard(data: x),
@@ -2440,6 +2539,37 @@ class _StatsScreenState extends State<StatsScreen> {
         ),
       ),
     );
+  }
+
+  // --------- Labels helper based on rangeIndex ----------
+  List<String> _xLabelsFor(int rangeIndex) {
+    switch (rangeIndex) {
+      case 0: // Daily
+        return const ["1", "3", "5", "7", "9", "11"];
+      case 1: // Weekly
+        return const ["W1", "W2", "W3", "W4"];
+      case 2: // Monthly
+        return const ["OCT 1", "OCT 15", "OCT 31"];
+      case 3: // Yearly
+        return const ["Q1", "Q2", "Q3", "Q4"];
+      default:
+        return const ["1", "6", "12"];
+    }
+  }
+
+  List<_InsightData> _filterInsightsByCategory(List<_InsightData> src, String category) {
+    if (category == "All") return src;
+    final key = category.toLowerCase();
+    // Very simple heuristic for UI demo:
+    return src.where((x) {
+      final t = (x.title + " " + x.subtitle).toLowerCase();
+      if (key.contains("food")) return t.contains("coffee") || t.contains("dining") || t.contains("grocery");
+      if (key.contains("bill") || key.contains("subscription")) return t.contains("subscription") || t.contains("netflix");
+      if (key.contains("transport")) return t.contains("transit") || t.contains("ride");
+      if (key.contains("shopping")) return t.contains("shopping") || t.contains("amazon");
+      if (key.contains("fuel")) return t.contains("fuel") || t.contains("gas");
+      return t.contains(key);
+    }).toList();
   }
 
   // ---------- Calendar menu + pickers ----------
@@ -2586,6 +2716,356 @@ class _StatsScreenState extends State<StatsScreen> {
     if (chosen != null) onSelect(chosen);
   }
 }
+
+class _InteractiveBarChart extends StatelessWidget {
+  final List<_TimePoint> points;
+  final int? selectedIndex;
+  final ValueChanged<int> onTapBar;
+
+  const _InteractiveBarChart({
+    required this.points,
+    required this.selectedIndex,
+    required this.onTapBar,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final teal = const Color(0xFF29D6C7);
+    final muted = const Color(0xFF94A3B8);
+
+    final maxV = points.isEmpty
+        ? 1.0
+        : points.map((p) => p.amount).reduce((a, b) => a > b ? a : b);
+
+    return SizedBox(
+      height: 190,
+      child: Column(
+        children: [
+          Expanded(
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(6, 10, 6, 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF7F8FA),
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: List.generate(points.length, (i) {
+                  final p = points[i];
+                  final sel = selectedIndex == i;
+                  final h = (p.amount / (maxV == 0 ? 1 : maxV)).clamp(0.0, 1.0);
+
+                  return Expanded(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => onTapBar(i),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 3),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 220),
+                          curve: Curves.easeOut,
+                          height: 160 * h,
+                          decoration: BoxDecoration(
+                            color: sel ? teal : teal.withOpacity(0.22),
+                            borderRadius: BorderRadius.circular(999),
+                            boxShadow: sel
+                                ? [
+                                    BoxShadow(
+                                      color: teal.withOpacity(0.25),
+                                      blurRadius: 10,
+                                      offset: const Offset(0, 6),
+                                    )
+                                  ]
+                                : null,
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          // X labels (show only a few to avoid clutter)
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: _sparseLabels(points.map((p) => p.label).toList())
+                .map((t) => Text(
+                      t,
+                      style: TextStyle(color: muted, fontWeight: FontWeight.w800, fontSize: 12),
+                    ))
+                .toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // show 3-4 labels max
+  static List<String> _sparseLabels(List<String> full) {
+    if (full.length <= 4) return full;
+    return [full.first, full[full.length ~/ 2], full.last];
+  }
+}
+
+
+class _TimePoint {
+  final String label;   // e.g. "Oct 1" / "W2" / "15"
+  final DateTime start; // start of bucket
+  final DateTime end;   // end of bucket
+  final double amount;  // spent
+  const _TimePoint({
+    required this.label,
+    required this.start,
+    required this.end,
+    required this.amount,
+  });
+}
+
+
+class _MainCategoryTrendsCard extends StatelessWidget {
+  final String title;
+  final String subtitleRight;
+  final List<String> categories;
+  final String selectedCategory;
+  final Map<String, List<double>> seriesByCategory;
+  final List<String> xLabels;
+  final ValueChanged<String> onSelectCategory;
+
+  const _MainCategoryTrendsCard({
+    required this.title,
+    required this.subtitleRight,
+    required this.categories,
+    required this.selectedCategory,
+    required this.seriesByCategory,
+    required this.xLabels,
+    required this.onSelectCategory,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final teal = const Color(0xFF29D6C7);
+    final textDark = const Color(0xFF0F172A);
+    final muted = const Color(0xFF64748B);
+
+    // Show series for selectedCategory (fallback to All)
+    final series = seriesByCategory[selectedCategory] ?? seriesByCategory["All"] ?? const [];
+
+    // Scale bars by max
+    final maxV = series.isEmpty ? 1.0 : series.reduce((a, b) => a > b ? a : b);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // header
+            Row(
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: textDark,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.2,
+                    fontSize: 12,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  subtitleRight,
+                  style: TextStyle(color: muted, fontWeight: FontWeight.w800),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 12),
+
+            // category selector row (scrollable)
+            SizedBox(
+              height: 40,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: categories.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 10),
+                itemBuilder: (_, i) {
+                  final c = categories[i];
+                  final sel = c == selectedCategory;
+
+                  return InkWell(
+                    borderRadius: BorderRadius.circular(999),
+                    onTap: () => onSelectCategory(c),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: sel ? teal : Colors.white,
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(color: sel ? teal : const Color(0xFFE5E7EB)),
+                      ),
+                      child: Text(
+                        c,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          color: sel ? Colors.black : const Color(0xFF0F172A),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+
+            const SizedBox(height: 14),
+
+            // bars
+            SizedBox(
+              height: 170,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  for (int i = 0; i < series.length; i++)
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 3),
+                        child: Container(
+                          height: 170 * (series[i] / (maxV == 0 ? 1 : maxV)),
+                          decoration: BoxDecoration(
+                            color: (i % 5 == 2) ? teal : teal.withOpacity(0.22),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 10),
+
+            // x-axis labels (simple)
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: xLabels
+                  .map((t) => Text(
+                        t,
+                        style: const TextStyle(
+                          color: Color(0xFF94A3B8),
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12,
+                        ),
+                      ))
+                  .toList(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SubSlice {
+  final String label;
+  final double value;
+  final Color color;
+
+  const _SubSlice(this.label, this.value, this.color);
+}
+
+class _SubcategoryBreakdownCard extends StatelessWidget {
+  final String title;
+  final String totalLabel;
+  final String totalValue;
+  final List<_SubSlice> subSlices;
+
+  const _SubcategoryBreakdownCard({
+    required this.title,
+    required this.totalLabel,
+    required this.totalValue,
+    required this.subSlices,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final textDark = const Color(0xFF0F172A);
+
+    // Convert to your existing PieSlice model
+    final slices = subSlices.map((s) => _PieSlice(s.label, s.value, s.color)).toList();
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: textDark,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.2,
+                    fontSize: 12,
+                  ),
+                ),
+                const Spacer(),
+                const Icon(Icons.info_outline, size: 18, color: Color(0xFF64748B)),
+              ],
+            ),
+
+            const SizedBox(height: 14),
+
+            SizedBox(
+              height: 260,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  _DonutChart(slices: slices),
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        totalLabel,
+                        style: const TextStyle(
+                          color: Color(0xFF64748B),
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        totalValue,
+                        style: const TextStyle(
+                          fontSize: 28,
+                          fontWeight: FontWeight.w900,
+                          color: Color(0xFF0F172A),
+                        ),
+                      ),
+                    ],
+                  )
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 10),
+
+            // legend
+            Wrap(
+              spacing: 16,
+              runSpacing: 10,
+              children: subSlices
+                  .map((s) => _LegendDot(label: s.label, color: s.color))
+                  .toList(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+
 
 // ----------------- Insights search + card -----------------
 
@@ -2800,7 +3280,6 @@ class _FilterChip extends StatelessWidget {
 
 class _MiniComparisonBars extends StatelessWidget {
   const _MiniComparisonBars();
-
   @override
   Widget build(BuildContext context) {
     final teal = const Color(0xFF29D6C7);
