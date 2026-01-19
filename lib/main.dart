@@ -42,7 +42,7 @@ class _MainShellState extends State<MainShell> {
     final pages = const [
       DashboardScreen(),
       StatsScreen(),
-      PlaceholderScreen(title: "Wallet"),
+      CategoriesScreen(),
       SettingsScreen(),
     ];
 
@@ -434,38 +434,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 );
               }),
             ),
-
-            // const SizedBox(height: 16),
-
-            // Account chips (keep your existing idea)
-            // SizedBox(
-            //   height: 48,
-            //   child: ListView(
-            //     scrollDirection: Axis.horizontal,
-            //     children: [
-            //       _AccountChip(
-            //         label: "All Accounts",
-            //         icon: Icons.account_balance_wallet_outlined,
-            //         selected: selectedAccountChip == 0,
-            //         onTap: () => setState(() => selectedAccountChip = 0),
-            //       ),
-            //       const SizedBox(width: 12),
-            //       _AccountChip(
-            //         label: "Savings",
-            //         icon: Icons.account_balance_outlined,
-            //         selected: selectedAccountChip == 1,
-            //         onTap: () => setState(() => selectedAccountChip = 1),
-            //       ),
-            //       const SizedBox(width: 12),
-            //       _AccountChip(
-            //         label: "Credit",
-            //         icon: Icons.credit_card_outlined,
-            //         selected: selectedAccountChip == 2,
-            //         onTap: () => setState(() => selectedAccountChip = 2),
-            //       ),
-            //     ],
-            //   ),
-            // ),
 
             const SizedBox(height: 18),
 
@@ -2100,7 +2068,8 @@ class _StatsScreenState extends State<StatsScreen> {
   // Time range tabs like the reference
   int rangeIndex = 2; // 0 Daily, 1 Weekly, 2 Monthly, 3 Yearly
   int? selectedBarIndex; // interactive selection
-
+  String selectedMainCategory = "All";
+  String? selectedSubCategory; 
   DateTimeRange? selectedRange;
   DateTime? selectedSingleDate;
 
@@ -2111,9 +2080,6 @@ class _StatsScreenState extends State<StatsScreen> {
     "Dates": "Last 30d",
     "Type": "All",
   };
-
-  // ✅ NEW: selected main category for filtering the whole page
-  String selectedMainCategory = "All";
 
   // Searchable insights data (UI only for now)
   final List<_InsightData> insightsData = const [
@@ -2153,39 +2119,63 @@ class _StatsScreenState extends State<StatsScreen> {
 // Mock generator (replace with backend later)
 // Generates 12 points by default for the selected rangeIndex
 List<_TimePoint> _buildSeriesFor({
-    required String mainCategory,
-  }) {
-    final now = DateTime.now();
-    final base = DateTime(now.year, 10, 1); // demo "Oct"
-    final values = (seriesByMainCategory[mainCategory] ?? seriesByMainCategory["All"]!) ;
+  required String mainCategory,
+  String? subCategory,
+}) {
+  final r = _effectiveRange();
 
-    // Create 12 buckets
-    return List.generate(values.length, (i) {
-      final DateTime s;
-      final DateTime e;
-      String label;
+  // Decide bucket count based on rangeIndex or selectedRange size
+  final days = r.end.difference(r.start).inDays + 1;
 
-      if (rangeIndex == 0) { // Daily
-        s = base.add(Duration(days: i));
-        e = s;
-        label = "${s.day}";
-      } else if (rangeIndex == 1) { // Weekly
-        s = base.add(Duration(days: i * 7));
-        e = s.add(const Duration(days: 6));
-        label = "W${i + 1}";
-      } else if (rangeIndex == 2) { // Monthly (show days inside month as buckets)
-        s = base.add(Duration(days: i * 2));
-        e = s.add(const Duration(days: 1));
-        label = "Oct ${s.day}";
-      } else { // Yearly (months)
-        s = DateTime(base.year, i + 1, 1);
-        e = DateTime(base.year, i + 2, 0);
-        label = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][i % 12];
-      }
-
-      return _TimePoint(label: label, start: s, end: e, amount: values[i]);
-    });
+  int buckets;
+  if (selectedRange != null || selectedSingleDate != null) {
+    // if user picked range, choose “nice” buckets
+    buckets = days <= 10 ? days : (days <= 35 ? 12 : 12);
+  } else {
+    buckets = switch (rangeIndex) {
+      0 => 7,   // daily default
+      1 => 8,   // weekly-ish bars
+      2 => 12,  // monthly bars
+      _ => 12,  // yearly months
+    };
   }
+
+  // Base values from category (fallback to All)
+  final baseValues = seriesByMainCategory[mainCategory] ?? seriesByMainCategory["All"]!;
+  // Use a repeat pattern so any bucket count works
+  double v(int i) => baseValues[i % baseValues.length];
+
+  // If subCategory is selected, shrink values a bit (mock behavior)
+  final subFactor = (subCategory == null) ? 1.0 : 0.55;
+
+  // Build buckets
+  return List.generate(buckets, (i) {
+    final start = DateTime.fromMillisecondsSinceEpoch(
+      r.start.millisecondsSinceEpoch +
+          ((r.end.millisecondsSinceEpoch - r.start.millisecondsSinceEpoch) * i ~/ buckets),
+    );
+    final end = DateTime.fromMillisecondsSinceEpoch(
+      r.start.millisecondsSinceEpoch +
+          ((r.end.millisecondsSinceEpoch - r.start.millisecondsSinceEpoch) * (i + 1) ~/ buckets) -
+          1,
+    );
+
+    final label = switch (rangeIndex) {
+      0 => "${start.day}",
+      1 => "W${i + 1}",
+      2 => "${start.month}/${start.day}",
+      _ => ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][start.month - 1],
+    };
+
+    return _TimePoint(
+      label: label,
+      start: start,
+      end: end,
+      amount: v(i) * subFactor,
+    );
+  });
+}
+
 
   double _totalSpent(List<_TimePoint> pts) => pts.fold(0.0, (a, b) => a + b.amount);
 
@@ -2328,19 +2318,17 @@ List<_TimePoint> _buildSeriesFor({
     final teal = const Color(0xFF29D6C7);
     final textDark = const Color(0xFF0F172A);
     final muted = const Color(0xFF64748B);
+    
+    
+    final points = _buildSeriesFor(
+      mainCategory: selectedMainCategory,
+      subCategory: selectedSubCategory,
+    );
+    final total = _totalSpent(points);
 
-    final series = seriesByMainCategory[selectedMainCategory] ??
-        seriesByMainCategory["All"]!;
     final subSlices = subcatsByMainCategory[selectedMainCategory] ??
         subcatsByMainCategory["All"]!;
-
-    final double totalSpent = series.fold(0.0, (a, b) => a + b);
-
-    // Filter insights by selected category (simple keyword match for now)
-    final filteredInsights = _filterInsightsByCategory(
-      insightsData,
-      selectedMainCategory,
-    );
+    final filteredInsights = _filterInsights(insightsData, selectedMainCategory, selectedSubCategory);
 
     return SafeArea(
       child: SingleChildScrollView(
@@ -2426,8 +2414,12 @@ List<_TimePoint> _buildSeriesFor({
             // Range tabs (Daily/Weekly/Monthly/Yearly)
             _RangeTabs(
               selectedIndex: rangeIndex,
-              onChanged: (i) => setState(() => rangeIndex = i),
+              onChanged: (i) => setState(() {
+                rangeIndex = i;
+                selectedBarIndex = null; // ✅ avoid stale highlight
+              }),
             ),
+
 
             const SizedBox(height: 14),
 
@@ -2472,23 +2464,70 @@ List<_TimePoint> _buildSeriesFor({
 
             const SizedBox(height: 16),
 
+            // Total spent header
+            _TotalSpentHeader(total: total, category: selectedMainCategory),
+            const SizedBox(height: 16),
+
             // ------------------------
             // 1) Main category time-series bar chart (tap category to filter)
             // ------------------------
             _MainCategoryTrendsCard(
               title: "MAIN CATEGORY EXPENDITURE",
-              subtitleRight: "Total \$${totalSpent.toStringAsFixed(2)}",
               categories: mainCategories,
               selectedCategory: selectedMainCategory,
-              seriesByCategory: seriesByMainCategory,
-              xLabels: _xLabelsFor(rangeIndex),
+              points: points,
+              selectedBarIndex: selectedBarIndex,
               onSelectCategory: (c) => setState(() {
                 selectedMainCategory = c;
                 filters["Category"] = c;
+                selectedSubCategory = null;     // ✅ reset
+                selectedBarIndex = null;        // ✅ reset
               }),
+              onTapBar: (i) async {
+                setState(() => selectedBarIndex = i);
+                final p = points[i];
+
+                await showModalBottomSheet(
+                  context: context,
+                  showDragHandle: true,
+                  builder: (_) => SafeArea(
+                    child: Padding(
+                      padding: const EdgeInsets.all(18),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            selectedMainCategory == "All"
+                                ? "Spending"
+                                : "$selectedMainCategory spending",
+                            style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            "${_fmt(p.start)} → ${_fmt(p.end)}",
+                            style: const TextStyle(
+                              color: Color(0xFF64748B),
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            "\$${p.amount.toStringAsFixed(2)}",
+                            style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 28),
+                          ),
+                          const SizedBox(height: 10),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
             ),
 
+
             const SizedBox(height: 16),
+
 
             // ------------------------
             // 2) Sub-category breakdown pie chart (filtered)
@@ -2496,8 +2535,13 @@ List<_TimePoint> _buildSeriesFor({
             _SubcategoryBreakdownCard(
               title: "SUB-CATEGORY BREAKDOWN",
               totalLabel: "TOTAL",
-              totalValue: "\$${totalSpent.toStringAsFixed(2)}",
+              totalValue: "\$${total.toStringAsFixed(2)}",
               subSlices: subSlices,
+              selectedSubCategory: selectedSubCategory,
+              onSelectSubCategory: (sub) => setState(() {
+                selectedSubCategory = (selectedSubCategory == sub) ? null : sub; // tap again to clear
+                selectedBarIndex = null;
+              }),
             ),
 
             const SizedBox(height: 18),
@@ -2523,6 +2567,7 @@ List<_TimePoint> _buildSeriesFor({
                 ),
               ],
             ),
+
 
             const SizedBox(height: 8),
 
@@ -2557,19 +2602,32 @@ List<_TimePoint> _buildSeriesFor({
     }
   }
 
-  List<_InsightData> _filterInsightsByCategory(List<_InsightData> src, String category) {
-    if (category == "All") return src;
-    final key = category.toLowerCase();
-    // Very simple heuristic for UI demo:
-    return src.where((x) {
-      final t = (x.title + " " + x.subtitle).toLowerCase();
-      if (key.contains("food")) return t.contains("coffee") || t.contains("dining") || t.contains("grocery");
-      if (key.contains("bill") || key.contains("subscription")) return t.contains("subscription") || t.contains("netflix");
-      if (key.contains("transport")) return t.contains("transit") || t.contains("ride");
-      if (key.contains("shopping")) return t.contains("shopping") || t.contains("amazon");
-      if (key.contains("fuel")) return t.contains("fuel") || t.contains("gas");
-      return t.contains(key);
-    }).toList();
+  List<_InsightData> _filterInsights(
+    List<_InsightData> src,
+    String main,
+    String? sub,
+  ) {
+    var out = src;
+
+    if (main != "All") {
+      out = out.where((x) {
+        final t = (x.title + " " + x.subtitle).toLowerCase();
+        final key = main.toLowerCase();
+        if (key.contains("food")) return t.contains("coffee") || t.contains("dining") || t.contains("grocery");
+        if (key.contains("bill") || key.contains("subscription")) return t.contains("subscription") || t.contains("netflix");
+        if (key.contains("transport")) return t.contains("transit") || t.contains("ride");
+        if (key.contains("shopping")) return t.contains("shopping") || t.contains("amazon");
+        if (key.contains("fuel")) return t.contains("fuel") || t.contains("gas");
+        return t.contains(key);
+      }).toList();
+    }
+
+    if (sub != null) {
+      final sk = sub.toLowerCase();
+      out = out.where((x) => (x.title + " " + x.subtitle).toLowerCase().contains(sk)).toList();
+    }
+
+    return out;
   }
 
   // ---------- Calendar menu + pickers ----------
@@ -2649,6 +2707,7 @@ List<_TimePoint> _buildSeriesFor({
       setState(() {
         selectedRange = picked;
         selectedSingleDate = null;
+        selectedBarIndex = null;
         filters["Dates"] = "${_fmt(picked.start)} - ${_fmt(picked.end)}";
       });
     }
@@ -2668,6 +2727,7 @@ List<_TimePoint> _buildSeriesFor({
       setState(() {
         selectedSingleDate = picked;
         selectedRange = null;
+        selectedBarIndex = null;
         filters["Dates"] = _fmt(picked);
       });
     }
@@ -2679,6 +2739,32 @@ List<_TimePoint> _buildSeriesFor({
       "Jul","Aug","Sep","Oct","Nov","Dec"
     ];
     return "${d.day} ${months[d.month - 1]}, ${d.year}";
+  }
+
+  DateTimeRange _effectiveRange() {
+    final now = DateTime.now();
+
+    if (selectedSingleDate != null) {
+      final d = selectedSingleDate!;
+      return DateTimeRange(
+        start: DateTime(d.year, d.month, d.day),
+        end: DateTime(d.year, d.month, d.day, 23, 59, 59),
+      );
+    }
+
+    if (selectedRange != null) return selectedRange!;
+
+    // defaults based on rangeIndex
+    switch (rangeIndex) {
+      case 0: // Daily -> last 7 days
+        return DateTimeRange(start: now.subtract(const Duration(days: 6)), end: now);
+      case 1: // Weekly -> last 4 weeks
+        return DateTimeRange(start: now.subtract(const Duration(days: 27)), end: now);
+      case 2: // Monthly -> last 30 days
+        return DateTimeRange(start: now.subtract(const Duration(days: 29)), end: now);
+      default: // Yearly -> last 12 months (approx)
+        return DateTimeRange(start: DateTime(now.year - 1, now.month, now.day), end: now);
+    }
   }
 
   // ---------- Filter picker ----------
@@ -2823,24 +2909,26 @@ class _TimePoint {
   });
 }
 
-
 class _MainCategoryTrendsCard extends StatelessWidget {
   final String title;
-  final String subtitleRight;
   final List<String> categories;
   final String selectedCategory;
-  final Map<String, List<double>> seriesByCategory;
-  final List<String> xLabels;
+
+  // ✅ backend-friendly: pass points already bucketed by day/week/month/year
+  final List<_TimePoint> points;
+
   final ValueChanged<String> onSelectCategory;
+  final ValueChanged<int> onTapBar;
+  final int? selectedBarIndex;
 
   const _MainCategoryTrendsCard({
     required this.title,
-    required this.subtitleRight,
     required this.categories,
     required this.selectedCategory,
-    required this.seriesByCategory,
-    required this.xLabels,
+    required this.points,
     required this.onSelectCategory,
+    required this.onTapBar,
+    required this.selectedBarIndex,
   });
 
   @override
@@ -2849,11 +2937,9 @@ class _MainCategoryTrendsCard extends StatelessWidget {
     final textDark = const Color(0xFF0F172A);
     final muted = const Color(0xFF64748B);
 
-    // Show series for selectedCategory (fallback to All)
-    final series = seriesByCategory[selectedCategory] ?? seriesByCategory["All"] ?? const [];
-
-    // Scale bars by max
-    final maxV = series.isEmpty ? 1.0 : series.reduce((a, b) => a > b ? a : b);
+    final maxV = points.isEmpty
+        ? 1.0
+        : points.map((p) => p.amount).reduce((a, b) => a > b ? a : b);
 
     return Card(
       child: Padding(
@@ -2875,7 +2961,7 @@ class _MainCategoryTrendsCard extends StatelessWidget {
                 ),
                 const Spacer(),
                 Text(
-                  subtitleRight,
+                  selectedCategory,
                   style: TextStyle(color: muted, fontWeight: FontWeight.w800),
                 ),
               ],
@@ -2919,51 +3005,87 @@ class _MainCategoryTrendsCard extends StatelessWidget {
 
             const SizedBox(height: 14),
 
-            // bars
+            // ✅ interactive bars
             SizedBox(
-              height: 170,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
+              height: 190,
+              child: Column(
                 children: [
-                  for (int i = 0; i < series.length; i++)
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 3),
-                        child: Container(
-                          height: 170 * (series[i] / (maxV == 0 ? 1 : maxV)),
-                          decoration: BoxDecoration(
-                            color: (i % 5 == 2) ? teal : teal.withOpacity(0.22),
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                        ),
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.fromLTRB(6, 10, 6, 6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF7F8FA),
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: List.generate(points.length, (i) {
+                          final p = points[i];
+                          final sel = selectedBarIndex == i;
+                          final h = (p.amount / (maxV == 0 ? 1 : maxV)).clamp(0.0, 1.0);
+
+                          return Expanded(
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () => onTapBar(i),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 3),
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 220),
+                                  curve: Curves.easeOut,
+                                  height: 160 * h,
+                                  decoration: BoxDecoration(
+                                    color: sel ? teal : teal.withOpacity(0.22),
+                                    borderRadius: BorderRadius.circular(999),
+                                    boxShadow: sel
+                                        ? [
+                                            BoxShadow(
+                                              color: teal.withOpacity(0.22),
+                                              blurRadius: 10,
+                                              offset: const Offset(0, 6),
+                                            )
+                                          ]
+                                        : null,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        }),
                       ),
                     ),
+                  ),
+                  const SizedBox(height: 10),
+
+                  // show 3 labels max (prevents overflow)
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: _sparseLabels(points.map((p) => p.label).toList())
+                        .map((t) => Text(
+                              t,
+                              style: TextStyle(
+                                color: const Color(0xFF94A3B8),
+                                fontWeight: FontWeight.w800,
+                                fontSize: 12,
+                              ),
+                            ))
+                        .toList(),
+                  ),
                 ],
               ),
-            ),
-
-            const SizedBox(height: 10),
-
-            // x-axis labels (simple)
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: xLabels
-                  .map((t) => Text(
-                        t,
-                        style: const TextStyle(
-                          color: Color(0xFF94A3B8),
-                          fontWeight: FontWeight.w800,
-                          fontSize: 12,
-                        ),
-                      ))
-                  .toList(),
             ),
           ],
         ),
       ),
     );
   }
+
+  static List<String> _sparseLabels(List<String> full) {
+    if (full.length <= 4) return full;
+    return [full.first, full[full.length ~/ 2], full.last];
+  }
 }
+
 
 class _SubSlice {
   final String label;
@@ -2978,12 +3100,16 @@ class _SubcategoryBreakdownCard extends StatelessWidget {
   final String totalLabel;
   final String totalValue;
   final List<_SubSlice> subSlices;
+  final String? selectedSubCategory;
+  final ValueChanged<String> onSelectSubCategory;
 
   const _SubcategoryBreakdownCard({
     required this.title,
     required this.totalLabel,
     required this.totalValue,
     required this.subSlices,
+    this.selectedSubCategory,
+    required this.onSelectSubCategory,
   });
 
   @override
@@ -3052,11 +3178,27 @@ class _SubcategoryBreakdownCard extends StatelessWidget {
 
             // legend
             Wrap(
-              spacing: 16,
+              spacing: 10,
               runSpacing: 10,
-              children: subSlices
-                  .map((s) => _LegendDot(label: s.label, color: s.color))
-                  .toList(),
+              children: subSlices.map((s) {
+                final sel = selectedSubCategory == s.label;
+                return InkWell(
+                  borderRadius: BorderRadius.circular(999),
+                  onTap: () => onSelectSubCategory(s.label),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: sel ? s.color.withOpacity(0.18) : Colors.white,
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: sel ? s.color : const Color(0xFFE5E7EB)),
+                    ),
+                    child: Text(
+                      s.label,
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                  ),
+                );
+              }).toList(),
             ),
           ],
         ),
