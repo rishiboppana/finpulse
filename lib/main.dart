@@ -70,9 +70,9 @@ class _MainShellState extends State<MainShell> {
             label: "Stats",
           ),
           NavigationDestination(
-            icon: Icon(Icons.account_balance_wallet_outlined),
-            selectedIcon: Icon(Icons.account_balance_wallet),
-            label: "Wallet",
+            icon: Icon(Icons.storefront_outlined),
+            selectedIcon: Icon(Icons.storefront),
+            label: "Categories",
           ),
           NavigationDestination(
             icon: Icon(Icons.settings_outlined),
@@ -1346,6 +1346,667 @@ class _TodayTxnRow extends StatelessWidget {
     );
   }
 }
+
+// Below is th ecode for Categories and Vendors Screen 
+class CategoriesScreen extends StatefulWidget {
+  const CategoriesScreen({super.key});
+
+  @override
+  State<CategoriesScreen> createState() => _CategoriesScreenState();
+}
+
+class _CategoriesScreenState extends State<CategoriesScreen> {
+  final teal = const Color(0xFF29D6C7);
+  final textDark = const Color(0xFF0F172A);
+  final muted = const Color(0xFF64748B);
+
+  // ✅ Make these mutable so “Add new … category” can actually add chips later
+  final List<String> mainCategories = ["Food", "Transport", "Utilities", "Health"];
+  final List<String> customCategories = ["Hobby", "Pet Care", "Subscriptions", "Gifts"];
+
+  // ✅ Mock “top 3 merchants” per category (backend later)
+  final Map<String, List<_VendorRow>> vendorsByCategory = {
+    "Food": const [
+      _VendorRow(name: "Whole Foods", amount: 642.20, subtitle: "Groceries, Bread, Milk, Organic produce"),
+      _VendorRow(name: "Starbucks", amount: 128.40, subtitle: "Latte, Espresso, Breakfast sandwich"),
+      _VendorRow(name: "Blue Bottle", amount: 42.15, subtitle: "Pour over, Coffee beans"),
+    ],
+    "Transport": const [
+      _VendorRow(name: "Uber", amount: 180.50, subtitle: "Commute, Weekend trip, Airport shuttle"),
+      _VendorRow(name: "Shell", amount: 94.80, subtitle: "Premium Fuel"),
+      _VendorRow(name: "BART", amount: 40.00, subtitle: "Train rides"),
+    ],
+    "Pet Care": const [
+      _VendorRow(name: "Chewy", amount: 152.00, subtitle: "Kibble, Chew toys, Shampoo"),
+      _VendorRow(name: "City Vet", amount: 60.00, subtitle: "Routine check-up"),
+      _VendorRow(name: "Petco", amount: 35.00, subtitle: "Treats"),
+    ],
+    "Utilities": const [
+      _VendorRow(name: "PG&E", amount: 120.00, subtitle: "Electricity + Gas"),
+      _VendorRow(name: "Xfinity", amount: 80.00, subtitle: "Internet"),
+      _VendorRow(name: "Water", amount: 45.00, subtitle: "City water bill"),
+    ],
+    "Health": const [
+      _VendorRow(name: "CVS Pharmacy", amount: 56.20, subtitle: "Medicines"),
+      _VendorRow(name: "City Dental", amount: 120.00, subtitle: "Cleaning"),
+      _VendorRow(name: "Gym", amount: 35.00, subtitle: "Monthly membership"),
+    ],
+    "Hobby": const [
+      _VendorRow(name: "Amazon", amount: 72.60, subtitle: "Accessories, parts"),
+      _VendorRow(name: "Michaels", amount: 38.20, subtitle: "Craft supplies"),
+      _VendorRow(name: "Steam", amount: 19.99, subtitle: "Game purchase"),
+    ],
+    "Subscriptions": const [
+      _VendorRow(name: "Netflix", amount: 15.49, subtitle: "Monthly subscription"),
+      _VendorRow(name: "Spotify", amount: 10.99, subtitle: "Monthly subscription"),
+      _VendorRow(name: "iCloud", amount: 2.99, subtitle: "Storage plan"),
+    ],
+    "Gifts": const [
+      _VendorRow(name: "Target", amount: 64.20, subtitle: "Gift items"),
+      _VendorRow(name: "Amazon", amount: 29.99, subtitle: "Gift order"),
+      _VendorRow(name: "Hallmark", amount: 12.50, subtitle: "Card"),
+    ],
+  };
+
+  String selectedCategory = "Food";
+
+  final ScrollController _sc = ScrollController();
+  late final Map<String, GlobalKey> _sectionKeys = {
+    for (final c in [...mainCategories, ...customCategories]) c: GlobalKey()
+  };
+
+  double _categoryTotal(String category) {
+    final rows = vendorsByCategory[category] ?? const [];
+    return rows.fold(0.0, (sum, r) => sum + r.amount);
+  }
+
+  Future<void> _scrollToCategory(String category) async {
+    final key = _sectionKeys[category];
+    if (key == null) return;
+    final ctx = key.currentContext;
+    if (ctx == null) return;
+    await Scrollable.ensureVisible(
+      ctx,
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOut,
+      alignment: 0.08,
+    );
+  }
+
+  @override
+  void dispose() {
+    _sc.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final allCategories = [...mainCategories, ...customCategories];
+
+    return SafeArea(
+      child: SingleChildScrollView(
+        controller: _sc,
+        padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Top bar
+            Row(
+              children: [
+                _RoundIcon(
+                  icon: Icons.arrow_back,
+                  onTap: () {
+                    if (Navigator.canPop(context)) Navigator.pop(context);
+                  },
+                ),
+                const Spacer(),
+                Text(
+                  "Categories",
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: textDark),
+                ),
+                const Spacer(),
+                _RoundIcon(icon: Icons.search, onTap: () {}),
+              ],
+            ),
+
+            const SizedBox(height: 18),
+
+            Text(
+              "Categories & Vendors",
+              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: textDark),
+            ),
+
+            const SizedBox(height: 18),
+
+            // MAIN CATEGORIES
+            Text(
+              "MAIN CATEGORIES",
+              style: TextStyle(
+                color: muted,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1.1,
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(height: 10),
+
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                for (final c in mainCategories)
+                  _CategoryChip(
+                    label: c,
+                    selected: selectedCategory == c,
+                    onTap: () async {
+                      setState(() => selectedCategory = c);
+                      await _scrollToCategory(c);
+                    },
+                  ),
+                _AddChip(
+                  label: "Add new main category",
+                  onTap: () => _addCategoryFlow(isMain: true),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 18),
+
+            // CUSTOM CATEGORIES
+            Text(
+              "CUSTOM CATEGORIES",
+              style: TextStyle(
+                color: muted,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1.1,
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(height: 10),
+
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                for (final c in customCategories)
+                  _CategoryChip(
+                    label: c,
+                    selected: selectedCategory == c,
+                    onTap: () async {
+                      setState(() => selectedCategory = c);
+                      await _scrollToCategory(c);
+                    },
+                  ),
+                _AddChip(
+                  label: "Add new custom category",
+                  onTap: () => _addCategoryFlow(isMain: false),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 18),
+
+            // ✅ SHOW ALL CATEGORY CARDS STACKED
+            for (final cat in allCategories) ...[
+              _CategorySectionCard(
+                key: _sectionKeys[cat],
+                title: cat,
+                total: _categoryTotal(cat),
+                expanded: selectedCategory == cat,
+                rows: (vendorsByCategory[cat] ?? const []).take(3).toList(),
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            const SizedBox(height: 90),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _addCategoryFlow({required bool isMain}) async {
+    final label = isMain ? "Add new main category" : "Add new custom category";
+
+    final result = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => _AddCategorySheet(title: label),
+    );
+
+    if (result == null || result.trim().isEmpty) return;
+    final name = result.trim();
+
+    setState(() {
+      if (isMain) {
+        if (!mainCategories.contains(name)) mainCategories.add(name);
+      } else {
+        if (!customCategories.contains(name)) customCategories.add(name);
+      }
+      vendorsByCategory.putIfAbsent(name, () => const []);
+      _sectionKeys.putIfAbsent(name, () => GlobalKey());
+      selectedCategory = name;
+    });
+
+    await _scrollToCategory(name);
+  }
+}
+
+class _CategorySectionCard extends StatelessWidget {
+  final String title;
+  final double total;
+  final bool expanded;
+  final List<_VendorRow> rows;
+
+  const _CategorySectionCard({
+    super.key,
+    required this.title,
+    required this.total,
+    required this.expanded,
+    required this.rows,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final textDark = const Color(0xFF0F172A);
+    final muted = const Color(0xFF64748B);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            // Header row always visible
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: textDark),
+                  ),
+                ),
+                Text(
+                  "\$${total.toStringAsFixed(2)}",
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: textDark),
+                ),
+              ],
+            ),
+
+            // Only selected category shows details "as shown"
+            AnimatedCrossFade(
+              duration: const Duration(milliseconds: 220),
+              crossFadeState: expanded ? CrossFadeState.showFirst : CrossFadeState.showSecond,
+              firstChild: Padding(
+                padding: const EdgeInsets.only(top: 16),
+                child: rows.isEmpty
+                    ? Text(
+                        "No merchants yet for this category.",
+                        style: TextStyle(color: muted, fontWeight: FontWeight.w700),
+                      )
+                    : Column(
+                        children: [
+                          for (int i = 0; i < rows.length; i++) ...[
+                            _VendorTile(row: rows[i]),
+                            if (i != rows.length - 1) const SizedBox(height: 16),
+                          ],
+                        ],
+                      ),
+              ),
+              secondChild: const SizedBox.shrink(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _VendorRow {
+  final String name;
+  final double amount;
+  final String subtitle;
+  const _VendorRow({required this.name, required this.amount, required this.subtitle});
+}
+
+class _VendorTile extends StatelessWidget {
+  final _VendorRow row;
+  const _VendorTile({required this.row});
+
+  @override
+  Widget build(BuildContext context) {
+    final textDark = const Color(0xFF0F172A);
+    final muted = const Color(0xFF64748B);
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                row.name,
+                style: TextStyle(fontWeight: FontWeight.w900, color: textDark, fontSize: 16),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                row.subtitle,
+                style: TextStyle(color: muted, fontWeight: FontWeight.w700),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 12),
+        Text(
+          "\$${row.amount.toStringAsFixed(2)}",
+          style: TextStyle(fontWeight: FontWeight.w900, color: textDark, fontSize: 16),
+        ),
+      ],
+    );
+  }
+}
+
+// --- Chips + Add bottom sheet (same style) ---
+
+class _CategoryChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _CategoryChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(999),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: selected ? Colors.black : Colors.white,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: selected ? Colors.black : const Color(0xFFE5E7EB)),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontWeight: FontWeight.w900,
+            color: selected ? Colors.white : const Color(0xFF0F172A),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AddChip extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+
+  const _AddChip({required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final teal = const Color(0xFF29D6C7);
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(999),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: teal.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: teal.withOpacity(0.35)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.add, size: 18, color: teal),
+            const SizedBox(width: 8),
+            Text(label, style: const TextStyle(fontWeight: FontWeight.w900)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AddCategorySheet extends StatefulWidget {
+  final String title;
+  const _AddCategorySheet({required this.title});
+
+  @override
+  State<_AddCategorySheet> createState() => _AddCategorySheetState();
+}
+
+class _AddCategorySheetState extends State<_AddCategorySheet> {
+  final _c = TextEditingController();
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final teal = const Color(0xFF29D6C7);
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 10, 18, 18),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(widget.title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _c,
+              decoration: InputDecoration(
+                labelText: "Category name",
+                filled: true,
+                fillColor: Colors.white,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+              ),
+            ),
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(context, _c.text.trim()),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: teal,
+                  foregroundColor: Colors.black,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                ),
+                child: const Text("Save", style: TextStyle(fontWeight: FontWeight.w900)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+
+// class _VendorRow {
+//   final String name;
+//   final double amount;
+//   final String subtitle;
+//   const _VendorRow({required this.name, required this.amount, required this.subtitle});
+// }
+
+// class _VendorTile extends StatelessWidget {
+//   final _VendorRow row;
+//   const _VendorTile({required this.row});
+
+//   @override
+//   Widget build(BuildContext context) {
+//     final textDark = const Color(0xFF0F172A);
+//     final muted = const Color(0xFF64748B);
+
+//     return Row(
+//       crossAxisAlignment: CrossAxisAlignment.start,
+//       children: [
+//         Expanded(
+//           child: Column(
+//             crossAxisAlignment: CrossAxisAlignment.start,
+//             children: [
+//               Text(row.name, style: TextStyle(fontWeight: FontWeight.w900, color: textDark, fontSize: 16)),
+//               const SizedBox(height: 6),
+//               Text(row.subtitle, style: TextStyle(color: muted, fontWeight: FontWeight.w700)),
+//             ],
+//           ),
+//         ),
+//         const SizedBox(width: 12),
+//         Text(
+//           "\$${row.amount.toStringAsFixed(2)}",
+//           style: TextStyle(fontWeight: FontWeight.w900, color: textDark, fontSize: 16),
+//         ),
+//       ],
+//     );
+//   }
+// }
+
+// class _CategoryChip extends StatelessWidget {
+//   final String label;
+//   final bool selected;
+//   final VoidCallback onTap;
+
+//   const _CategoryChip({
+//     required this.label,
+//     required this.selected,
+//     required this.onTap,
+//   });
+
+//   @override
+//   Widget build(BuildContext context) {
+//     final teal = const Color(0xFF29D6C7);
+
+//     return InkWell(
+//       borderRadius: BorderRadius.circular(999),
+//       onTap: onTap,
+//       child: Container(
+//         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+//         decoration: BoxDecoration(
+//           color: selected ? Colors.black : Colors.white,
+//           borderRadius: BorderRadius.circular(999),
+//           border: Border.all(color: selected ? Colors.black : const Color(0xFFE5E7EB)),
+//         ),
+//         child: Text(
+//           label,
+//           style: TextStyle(
+//             fontWeight: FontWeight.w900,
+//             color: selected ? Colors.white : const Color(0xFF0F172A),
+//           ),
+//         ),
+//       ),
+//     );
+//   }
+// }
+
+// class _AddChip extends StatelessWidget {
+//   final String label;
+//   final VoidCallback onTap;
+
+//   const _AddChip({required this.label, required this.onTap});
+
+//   @override
+//   Widget build(BuildContext context) {
+//     final teal = const Color(0xFF29D6C7);
+
+//     return InkWell(
+//       borderRadius: BorderRadius.circular(999),
+//       onTap: onTap,
+//       child: Container(
+//         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+//         decoration: BoxDecoration(
+//           color: teal.withOpacity(0.12),
+//           borderRadius: BorderRadius.circular(999),
+//           border: Border.all(color: teal.withOpacity(0.35)),
+//         ),
+//         child: Row(
+//           mainAxisSize: MainAxisSize.min,
+//           children: [
+//             Icon(Icons.add, size: 18, color: teal),
+//             const SizedBox(width: 8),
+//             Text(label, style: const TextStyle(fontWeight: FontWeight.w900)),
+//           ],
+//         ),
+//       ),
+//     );
+//   }
+// }
+
+// class _AddCategorySheet extends StatefulWidget {
+//   final String title;
+//   const _AddCategorySheet({required this.title});
+
+//   @override
+//   State<_AddCategorySheet> createState() => _AddCategorySheetState();
+// }
+
+// class _AddCategorySheetState extends State<_AddCategorySheet> {
+//   final _c = TextEditingController();
+
+//   @override
+//   void dispose() {
+//     _c.dispose();
+//     super.dispose();
+//   }
+
+//   @override
+//   Widget build(BuildContext context) {
+//     final teal = const Color(0xFF29D6C7);
+
+//     return SafeArea(
+//       child: Padding(
+//         padding: const EdgeInsets.fromLTRB(18, 10, 18, 18),
+//         child: Column(
+//           mainAxisSize: MainAxisSize.min,
+//           crossAxisAlignment: CrossAxisAlignment.start,
+//           children: [
+//             Text(widget.title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
+//             const SizedBox(height: 10),
+//             TextField(
+//               controller: _c,
+//               decoration: InputDecoration(
+//                 labelText: "Category name",
+//                 filled: true,
+//                 fillColor: Colors.white,
+//                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+//               ),
+//             ),
+//             const SizedBox(height: 14),
+//             SizedBox(
+//               width: double.infinity,
+//               height: 52,
+//               child: ElevatedButton(
+//                 onPressed: () => Navigator.pop(context, _c.text.trim()),
+//                 style: ElevatedButton.styleFrom(
+//                   backgroundColor: teal,
+//                   foregroundColor: Colors.black,
+//                   elevation: 0,
+//                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+//                 ),
+//                 child: const Text("Save", style: TextStyle(fontWeight: FontWeight.w900)),
+//               ),
+//             ),
+//           ],
+//         ),
+//       ),
+//     );
+//   }
+// }
 
 
 // Below is the code for settings screen 
