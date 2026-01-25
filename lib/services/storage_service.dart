@@ -27,6 +27,12 @@ class StorageService {
     _prefs ??= await SharedPreferences.getInstance();
   }
 
+  /// Get SharedPreferences instance (for other services)
+  Future<SharedPreferences> getPrefs() async {
+    await init();
+    return _prefs!;
+  }
+
   // ─────────────────────────────────────────────────────────────────────────────
   // Auth Token (Secure Storage)
   // ─────────────────────────────────────────────────────────────────────────────

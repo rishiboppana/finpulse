@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'models/bank_account.dart';
 import 'providers/auth_provider.dart';
+import 'providers/bank_provider.dart';
 import 'screens/login_screen.dart';
 
 void main() => runApp(const FinPulseApp());
@@ -15,6 +17,7 @@ class FinPulseApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
+        ChangeNotifierProvider(create: (_) => BankProvider()),
       ],
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
@@ -37,8 +40,15 @@ class FinPulseApp extends StatelessWidget {
 }
 
 /// Auth gate that shows login or main app based on auth state.
-class AuthGate extends StatelessWidget {
+class AuthGate extends StatefulWidget {
   const AuthGate({super.key});
+
+  @override
+  State<AuthGate> createState() => _AuthGateState();
+}
+
+class _AuthGateState extends State<AuthGate> {
+  String? _lastUserId;
 
   @override
   Widget build(BuildContext context) {
@@ -49,12 +59,25 @@ class AuthGate extends StatelessWidget {
           return const _SplashScreen();
         }
 
-        // Authenticated - show main app
-        if (auth.isAuthenticated) {
+        // Authenticated - initialize bank provider and show main app
+        if (auth.isAuthenticated && auth.user != null) {
+          // Initialize bank provider when user logs in
+          if (_lastUserId != auth.user!.id) {
+            _lastUserId = auth.user!.id;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              context.read<BankProvider>().initialize(auth.user!.id);
+            });
+          }
           return const MainShell();
         }
 
-        // Not authenticated - show login
+        // Not authenticated - reset bank provider and show login
+        if (_lastUserId != null) {
+          _lastUserId = null;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            context.read<BankProvider>().reset();
+          });
+        }
         return const LoginScreen();
       },
     );
@@ -182,12 +205,14 @@ enum _AccountMode { debit, credit }
 enum _ScopeMode { daily, monthly }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  int selectedAccountChip = 0;
-
+  int activeAccountIndex = 0;
+  final PageController _acctController = PageController(viewportFraction: 0.92);
+  
+  // Toggles
   _AccountMode accountMode = _AccountMode.debit;
   _ScopeMode scopeMode = _ScopeMode.daily;
 
-  // Pending (Yet to Transponse) queue
+  // Pending (Yet to Transponse) queue - kept mock for now until Transactions implemented
   final List<_PendingTxn> pending = [
     _PendingTxn(accountId: "chase_checking", merchant: "Starbucks Coffee", amount: 5.50, time: "18 Jan • 12:02 PM", to: "YYYY"),
     _PendingTxn(accountId: "chase_checking", merchant: "Whole Foods", amount: 84.20, time: "18 Jan • 02:10 PM", to: "YYYY"),
@@ -196,7 +221,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _PendingTxn(accountId: "ally_savings", merchant: "Target", amount: 64.20, time: "17 Jan • 05:40 PM", to: "YYYY"),
   ];
 
-  // Insights (Home-only)
+  // Fake category breakdown for the top mini-bars
+  final List<_MiniCatBar> miniBars = const [
+    _MiniCatBar(label: "Food", value: 0.75),
+    _MiniCatBar(label: "Bills", value: 0.35),
+    _MiniCatBar(label: "Fuel", value: 0.55),
+  ];
+
+  // Insights (Home-only) - Restored
   final List<_InsightData> homeInsights = const [
     _InsightData(
       icon: Icons.coffee_rounded,
@@ -214,315 +246,238 @@ class _DashboardScreenState extends State<DashboardScreen> {
     ),
   ];
 
-  // Fake category breakdown for the top mini-bars (today)
-  final List<_MiniCatBar> miniBars = const [
-    _MiniCatBar(label: "Food", value: 0.75),
-    _MiniCatBar(label: "Bills", value: 0.35),
-    _MiniCatBar(label: "Fuel", value: 0.55),
-  ];
-
-  // Fake donut data: Target vs Actual (daily)
-  List<_PieSlice> get _targetSlices => const [
-        _PieSlice("Food", 0.35, Color(0xFF29D6C7)),
-        _PieSlice("Bills", 0.30, Color(0xFF1F2937)),
-        _PieSlice("Fuel", 0.20, Color(0xFF334155)),
-        _PieSlice("Other", 0.15, Color(0xFF111827)),
-      ];
-
-  List<_PieSlice> get _actualSlices => const [
-        _PieSlice("Food", 0.45, Color(0xFF29D6C7)),
-        _PieSlice("Bills", 0.25, Color(0xFF1F2937)),
-        _PieSlice("Fuel", 0.15, Color(0xFF334155)),
-        _PieSlice("Other", 0.15, Color(0xFF111827)),
-      ];
-
-  double get _todaySpend => 1240.50;
-  double get _monthSpend => 3240.50;
-
-  int activeAccountIndex = 0;
-  final PageController _acctController = PageController(viewportFraction: 0.92);
-
-  final List<_HomeAccount> accounts = const [
-    _HomeAccount(
-      id: "all",
-      title: "All Accounts",
-      subtitle: "Aggregated",
-      accentBg: Color(0xFFE9FFF9),
-    ),
-    _HomeAccount(
-      id: "chase_checking",
-      title: "Chase Checking",
-      subtitle: "•••• 1234",
-      accentBg: Color(0xFFEFF2FF),
-    ),
-    _HomeAccount(
-      id: "ally_savings",
-      title: "Ally Savings",
-      subtitle: "•••• 5678",
-      accentBg: Color(0xFFF0FDF4),
-    ),
-    _HomeAccount(
-      id: "amex_credit",
-      title: "Amex Credit",
-      subtitle: "•••• 9012",
-      accentBg: Color(0xFFFFF1F2),
-    ),
-  ];
-
-  String get activeAccountId => accounts[activeAccountIndex].id;
-
-  List<_PendingTxn> get visiblePending {
-    if (activeAccountId == "all") return pending;
-    return pending.where((x) => x.accountId == activeAccountId).toList();
-  }
-
-  double _heroAmountFor(String accountId, _ScopeMode scope) {
-    if (scope == _ScopeMode.monthly) {
-      switch (accountId) {
-        case "all": return 3240.50;
-        case "chase_checking": return 1420.20;
-        case "ally_savings": return 680.00;
-        case "amex_credit": return 1140.30;
-        default: return 0;
-      }
-    } else {
-      switch (accountId) {
-        case "all": return 1240.50;
-        case "chase_checking": return 420.20;
-        case "ally_savings": return 180.00;
-        case "amex_credit": return 640.30;
-        default: return 0;
-      }
-    }
-  }
-
-  List<_MiniCatBar> _miniBarsFor(String accountId) {
-    switch (accountId) {
-      case "chase_checking":
-        return const [
-          _MiniCatBar(label: "Food", value: 0.70),
-          _MiniCatBar(label: "Bills", value: 0.25),
-          _MiniCatBar(label: "Fuel", value: 0.55),
-        ];
-      case "ally_savings":
-        return const [
-          _MiniCatBar(label: "Bills", value: 0.65),
-          _MiniCatBar(label: "Food", value: 0.20),
-          _MiniCatBar(label: "Other", value: 0.35),
-        ];
-      case "amex_credit":
-        return const [
-          _MiniCatBar(label: "Shopping", value: 0.75),
-          _MiniCatBar(label: "Food", value: 0.40),
-          _MiniCatBar(label: "Travel", value: 0.30),
-        ];
-      default:
-        return const [
-          _MiniCatBar(label: "Food", value: 0.75),
-          _MiniCatBar(label: "Bills", value: 0.35),
-          _MiniCatBar(label: "Fuel", value: 0.55),
-        ];
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final teal = const Color(0xFF29D6C7);
     final textDark = const Color(0xFF0F172A);
     final muted = const Color(0xFF64748B);
 
-    final heroTitle = scopeMode == _ScopeMode.daily ? "Today’s spending" : "Spent this month";
-    final heroAmount = scopeMode == _ScopeMode.daily ? _todaySpend : _monthSpend;
-
     return SafeArea(
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Top bar: avatar, title, bell
-            Row(
+        child: Consumer<BankProvider>(
+          builder: (context, bank, _) {
+            // Get accounts based on toggle (Debit=Savings/Current, Credit=CreditCard)
+            final allAccounts = bank.accounts;
+            
+            // Construct display list
+            final displayList = <dynamic>[
+              {'id': 'all', 'title': 'All Accounts', 'subtitle': 'Aggregated', 'balance': bank.totalBalance, 'formatted': bank.formattedTotalBalance},
+              ...allAccounts.map((a) => {
+                'id': a.id,
+                'title': a.accountName,
+                'subtitle': "${a.institutionName} • ${a.maskedNumber}",
+                'balance': a.balance,
+                'formatted': a.formattedBalance,
+                'institutionId': a.institutionId,
+              })
+            ];
+
+            // Safety check for index
+            if (activeAccountIndex >= displayList.length) {
+              activeAccountIndex = 0;
+            }
+
+            // Calculate visible pending transactions based on active account
+            final activeAccountId = displayList[activeAccountIndex]['id'] as String;
+            final visiblePending = activeAccountId == 'all' 
+                ? pending 
+                : pending.where((x) => x.accountId == activeAccountId).toList();
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _RoundIcon(
-                  icon: Icons.person,
-                  onTap: () => showProfileSideSheet(context),
-                ),
-                const Spacer(),
-                Text(
-                  "Dashboard",
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                    color: textDark,
-                  ),
-                ),
-                const Spacer(),
-                _RoundIcon(icon: Icons.notifications_none_rounded, onTap: () {}),
-              ],
-            ),
-
-            const SizedBox(height: 14),
-
-            // Debit / Daily toggle row (your sketch)
-            Row(
-              children: [
-                _PillToggle(
-                  label: "Debit",
-                  selected: accountMode == _AccountMode.debit,
-                  onTap: () => setState(() => accountMode = _AccountMode.debit),
-                ),
-                const SizedBox(width: 10),
-                _PillToggle(
-                  label: "Credit",
-                  selected: accountMode == _AccountMode.credit,
-                  onTap: () => setState(() => accountMode = _AccountMode.credit),
-                ),
-                const Spacer(),
-                _PillToggle(
-                  label: "Daily",
-                  selected: scopeMode == _ScopeMode.daily,
-                  onTap: () => setState(() => scopeMode = _ScopeMode.daily),
-                ),
-                const SizedBox(width: 10),
-                _PillToggle(
-                  label: "Monthly",
-                  selected: scopeMode == _ScopeMode.monthly,
-                  onTap: () => setState(() => scopeMode = _ScopeMode.monthly),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 14),
-
-            // HERO (swipeable across accounts) + mini category bars
-            SizedBox(
-              height: 210, // tune if needed
-              child: PageView.builder(
-                controller: _acctController, // make sure you added this in state
-                itemCount: accounts.length,   // All + individual banks
-                onPageChanged: (i) => setState(() => activeAccountIndex = i),
-                itemBuilder: (_, i) {
-                  final acc = accounts[i];
-
-                  // Use your existing scopeMode and compute data per account
-                  final title = scopeMode == _ScopeMode.daily ? "Today’s spending" : "Spent this month";
-                  final amount = _heroAmountFor(acc.id, scopeMode);
-                  final bars = _miniBarsFor(acc.id);
-
-                  return Padding(
-                    padding: EdgeInsets.only(right: i == accounts.length - 1 ? 0 : 12),
-                    child: Card(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: acc.accentBg, // subtle tint per account (optional)
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        padding: const EdgeInsets.all(14),
-                        child: Row(
-                          children: [
-                            // Left: account label + big spend
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  // account title
-                                  Text(
-                                    acc.title,
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w900,
-                                      color: textDark,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    acc.subtitle,
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: muted,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-
-                                  const SizedBox(height: 14),
-
-                                  Text(
-                                    title,
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      color: muted,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 10),
-                                  Text(
-                                    "\$${amount.toStringAsFixed(2)}",
-                                    style: TextStyle(
-                                      fontSize: 34,
-                                      fontWeight: FontWeight.w900,
-                                      color: textDark,
-                                      letterSpacing: -1,
-                                    ),
-                                  ),
-                                  // const SizedBox(height: 10),
-                                  const Spacer(),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                    decoration: BoxDecoration(
-                                      color: teal.withOpacity(0.12),
-                                      borderRadius: BorderRadius.circular(999),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(Icons.trending_down_rounded, size: 18, color: teal),
-                                        const SizedBox(width: 6),
-                                        Text(
-                                          scopeMode == _ScopeMode.daily ? "-3% vs yesterday" : "-5% vs last month",
-                                          style: TextStyle(color: teal, fontWeight: FontWeight.w800),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-
-                            const SizedBox(width: 14),
-
-                            // Right: mini bars (Top categories)
-                            SizedBox(
-                              width: 130,
-                              child: _MiniCategoryBars(bars: bars),
-                            ),
-                          ],
-                        ),
+                // Top bar: avatar, title, bell
+                Row(
+                  children: [
+                    _RoundIcon(
+                      icon: Icons.person,
+                      onTap: () => showProfileSideSheet(context),
+                    ),
+                    const Spacer(),
+                    Text(
+                      "Dashboard",
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w800,
+                        color: textDark,
                       ),
                     ),
-                  );
-                },
-              ),
-            ),
+                    const Spacer(),
+                    _RoundIcon(icon: Icons.notifications_none_rounded, onTap: () {}),
+                  ],
+                ),
 
-            const SizedBox(height: 10),
+                const SizedBox(height: 14),
 
-            // dots indicator (optional but recommended)
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(accounts.length, (i) {
-                final active = i == activeAccountIndex;
-                return AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  width: active ? 18 : 7,
-                  height: 7,
-                  margin: const EdgeInsets.symmetric(horizontal: 4),
-                  decoration: BoxDecoration(
-                    color: active ? teal : const Color(0xFFE2E8F0),
-                    borderRadius: BorderRadius.circular(999),
+                // Debit / Daily toggle row
+                Row(
+                  children: [
+                    _PillToggle(
+                      label: "Accounts",
+                      selected: accountMode == _AccountMode.debit,
+                      onTap: () => setState(() => accountMode = _AccountMode.debit),
+                    ),
+                    const SizedBox(width: 10),
+                    // Hidden for now since we don't differentiate yet
+                    // _PillToggle(label: "Credit", ...),
+                    const Spacer(),
+                    // scopeMode helps switch between Spend vs Balance display?
+                    // For now, let's stick to Balance since we have that real data
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEFF2F6),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        "Live Balance",
+                        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: muted),
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 14),
+
+                // HERO (swipeable across accounts)
+                SizedBox(
+                  height: 210,
+                  child: PageView.builder(
+                    controller: _acctController,
+                    itemCount: displayList.length,
+                    onPageChanged: (i) => setState(() => activeAccountIndex = i),
+                    itemBuilder: (_, i) {
+                      final item = displayList[i];
+                      final isAll = i == 0;
+                      
+                      // Get bank color if individual account
+                      Color accentColor = const Color(0xFFE9FFF9);
+                      if (!isAll) {
+                        final meta = IndianBanks.getById(item['institutionId']);
+                        if (meta != null) {
+                          accentColor = Color(meta.color).withOpacity(0.08);
+                        }
+                      }
+
+                      return Padding(
+                        padding: EdgeInsets.only(right: i == displayList.length - 1 ? 0 : 12),
+                        child: Card(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: accentColor,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            padding: const EdgeInsets.all(14),
+                            child: Row(
+                              children: [
+                                // Left: account label + balance
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        item['title'],
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w900,
+                                          color: textDark,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        item['subtitle'],
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: muted,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+
+                                      const SizedBox(height: 14),
+
+                                      Text(
+                                        "Available Funds",
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          color: muted,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 10),
+                                      FittedBox(
+                                        alignment: Alignment.centerLeft,
+                                        fit: BoxFit.scaleDown,
+                                        child: Text(
+                                          item['formatted'],
+                                          style: TextStyle(
+                                            fontSize: 34,
+                                            fontWeight: FontWeight.w900,
+                                            color: textDark,
+                                            letterSpacing: -1,
+                                          ),
+                                        ),
+                                      ),
+                                      const Spacer(),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                        decoration: BoxDecoration(
+                                          color: teal.withOpacity(0.12),
+                                          borderRadius: BorderRadius.circular(999),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(Icons.trending_up, size: 18, color: teal),
+                                            const SizedBox(width: 6),
+                                            const Text(
+                                              "Updated just now", 
+                                              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 11), // Updated style
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+
+                                const SizedBox(width: 14),
+
+                                // Right: mini bars (Mocked for now)
+                                SizedBox(
+                                  width: 130,
+                                  child: _MiniCategoryBars(bars: miniBars),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
                   ),
-                );
-              }),
-            ),
+                ),
+
+                const SizedBox(height: 10),
+
+                // dots indicator
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(displayList.length, (i) {
+                    final active = i == activeAccountIndex;
+                    return AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      width: active ? 18 : 7,
+                      height: 7,
+                      margin: const EdgeInsets.symmetric(horizontal: 4),
+                      decoration: BoxDecoration(
+                        color: active ? teal : const Color(0xFFE2E8F0),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    );
+                  }),
+                ),
 
             const SizedBox(height: 18),
 
@@ -685,7 +640,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
             const SizedBox(height: 90),
           ],
-        ),
+        );
+      },
+    ),
       ),
     );
   }
@@ -2176,42 +2133,16 @@ class SelectAccountScreen extends StatefulWidget {
 }
 
 class _SelectAccountScreenState extends State<SelectAccountScreen> {
-  // UI-only mock data (backend later)
   int selectedIndex = 0;
 
-  final List<_AccountItem> accounts = const [
-    _AccountItem(
-      title: "All Accounts",
-      subtitle: "Aggregated balance from 4 links",
-      amount: "\$15,050.00",
-      icon: Icons.account_balance_wallet_rounded,
-      isSummary: true,
-    ),
-    _AccountItem(
-      title: "Main Checking",
-      subtitle: "Chase •••• 1234",
-      amount: "\$4,250.00",
-      icon: Icons.account_balance_rounded,
-    ),
-    _AccountItem(
-      title: "Emergency Fund",
-      subtitle: "Ally •••• 5678",
-      amount: "\$12,000.00",
-      icon: Icons.savings_rounded,
-    ),
-    _AccountItem(
-      title: "Travel Visa",
-      subtitle: "Amex •••• 9012",
-      amount: "-\$1,200.00",
-      icon: Icons.credit_card_rounded,
-    ),
-    _AccountItem(
-      title: "Personal Wallet",
-      subtitle: "MetaMask • ETH",
-      amount: "0.00 ETH",
-      icon: Icons.account_balance_wallet_outlined,
-    ),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    // Load accounts when screen opens
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<BankProvider>().loadAccounts();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2224,196 +2155,542 @@ class _SelectAccountScreenState extends State<SelectAccountScreen> {
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Header with back + title
-              Row(
+          child: Consumer<BankProvider>(
+            builder: (context, bank, _) {
+              if (bank.isLoading && !bank.hasAccounts) {
+                return const Center(child: CircularProgressIndicator());
+              }
+
+              final accounts = bank.accounts;
+              final totalBalance = bank.formattedTotalBalance;
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  InkWell(
-                    borderRadius: BorderRadius.circular(999),
-                    onTap: () => Navigator.pop(context),
-                    child: Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFEFF2F6),
+                  // Header with back + title
+                  Row(
+                    children: [
+                      InkWell(
                         borderRadius: BorderRadius.circular(999),
+                        onTap: () => Navigator.pop(context),
+                        child: Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEFF2F6),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: const Icon(Icons.arrow_back, color: Color(0xFF334155)),
+                        ),
                       ),
-                      child: const Icon(Icons.arrow_back, color: Color(0xFF334155)),
+                      const Spacer(),
+                      Text(
+                        "Select Account",
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                          color: textDark,
+                        ),
+                      ),
+                      const Spacer(),
+                      const SizedBox(width: 44),
+                    ],
+                  ),
+
+                  const SizedBox(height: 18),
+
+                  Text("SUMMARY", style: TextStyle(color: muted, fontWeight: FontWeight.w900, letterSpacing: 1.1)),
+                  const SizedBox(height: 10),
+
+                  // Summary Card
+                  Card(
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(20),
+                      onTap: () => setState(() => selectedIndex = 0),
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: selectedIndex == 0 ? teal : Colors.transparent,
+                            width: selectedIndex == 0 ? 2 : 1,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 48,
+                              height: 48,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFEFF2F6),
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              child: const Icon(Icons.account_balance_wallet_rounded, color: Color(0xFF334155)),
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text("All Accounts", style: TextStyle(color: textDark, fontWeight: FontWeight.w900)),
+                                  const SizedBox(height: 4),
+                                  Text("Aggregated balance", style: TextStyle(color: muted, fontWeight: FontWeight.w600)),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text(totalBalance, style: TextStyle(color: textDark, fontWeight: FontWeight.w900)),
+                                const SizedBox(height: 6),
+                                if (selectedIndex == 0)
+                                  Container(
+                                    width: 22,
+                                    height: 22,
+                                    decoration: BoxDecoration(color: teal, shape: BoxShape.circle),
+                                    child: const Icon(Icons.check, size: 16, color: Colors.white),
+                                  )
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
-                  const Spacer(),
-                  Text(
-                    "Select Account",
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w900,
-                      color: textDark,
+
+                  const SizedBox(height: 18),
+
+                  Text("CONNECTED ACCOUNTS", style: TextStyle(color: muted, fontWeight: FontWeight.w900, letterSpacing: 1.1)),
+                  const SizedBox(height: 10),
+
+                  if (accounts.isEmpty)
+                    Expanded(
+                      child: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.account_balance_outlined, size: 48, color: muted.withOpacity(0.5)),
+                            const SizedBox(height: 16),
+                            Text(
+                              "No accounts linked yet",
+                              style: TextStyle(color: muted, fontWeight: FontWeight.w600),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  else
+                    Expanded(
+                      child: ListView.separated(
+                        itemCount: accounts.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 12),
+                        itemBuilder: (context, i) {
+                          final acc = accounts[i];
+                          final idx = i + 1;
+                          final isSelected = selectedIndex == idx;
+                          
+                          // Find bank metadata for icon/color
+                          final bankMeta = IndianBanks.getById(acc.institutionId);
+                          final bankColor = bankMeta != null ? Color(bankMeta.color) : const Color(0xFF334155);
+
+                          // Allow swiping to remove account
+                          return Dismissible(
+                            key: Key(acc.id),
+                            direction: DismissDirection.endToStart,
+                            background: Container(
+                              alignment: Alignment.centerRight,
+                              padding: const EdgeInsets.only(right: 20),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF43F5E),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: const Icon(Icons.delete_outline_rounded, color: Colors.white, size: 28),
+                            ),
+                            confirmDismiss: (direction) async {
+                              return await showDialog(
+                                context: context,
+                                builder: (ctx) => AlertDialog(
+                                  title: const Text("Remove Account?"),
+                                  content: Text("Are you sure you want to unlink ${acc.accountName}?"),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.of(ctx).pop(false),
+                                      child: const Text("Cancel"),
+                                    ),
+                                    TextButton(
+                                      onPressed: () => Navigator.of(ctx).pop(true),
+                                      style: TextButton.styleFrom(foregroundColor: const Color(0xFFF43F5E)),
+                                      child: const Text("Remove"),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                            onDismissed: (direction) {
+                              context.read<BankProvider>().removeAccount(acc.id);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text("${acc.accountName} removed"),
+                                  action: SnackBarAction(
+                                    label: "Undo",
+                                    onPressed: () {
+                                      // Re-add account logic if needed, for now just simple delete
+                                    },
+                                  ),
+                                ),
+                              );
+                            },
+                            child: Card(
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(20),
+                                onTap: () => setState(() => selectedIndex = idx),
+                                child: Container(
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(
+                                      color: isSelected ? teal : Colors.transparent,
+                                      width: isSelected ? 2 : 1,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        width: 48,
+                                        height: 48,
+                                        decoration: BoxDecoration(
+                                          color: bankColor.withOpacity(0.1),
+                                          borderRadius: BorderRadius.circular(16),
+                                        ),
+                                        child: Icon(
+                                          Icons.account_balance_rounded, 
+                                          color: bankColor,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 14),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(acc.accountName, style: TextStyle(color: textDark, fontWeight: FontWeight.w900)),
+                                            const SizedBox(height: 4),
+                                            Text("${acc.institutionName} • ${acc.maskedNumber}", style: TextStyle(color: muted, fontWeight: FontWeight.w600)),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Column(
+                                        crossAxisAlignment: CrossAxisAlignment.end,
+                                        children: [
+                                          Text(acc.formattedBalance, style: TextStyle(color: textDark, fontWeight: FontWeight.w900)),
+                                          const SizedBox(height: 6),
+                                          if (isSelected)
+                                            Container(
+                                              width: 22,
+                                              height: 22,
+                                              decoration: BoxDecoration(color: teal, shape: BoxShape.circle),
+                                              child: const Icon(Icons.check, size: 16, color: Colors.white),
+                                            )
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+
+                  const SizedBox(height: 14),
+
+                  // Link new account button
+                  SizedBox(
+                    width: double.infinity,
+                    height: 56,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: teal,
+                        foregroundColor: Colors.black,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                        elevation: 0,
+                      ),
+                      icon: const Icon(Icons.add),
+                      label: const Text(
+                        "Link New Account",
+                        style: TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                      onPressed: () => _showAddAccountSheet(context),
                     ),
                   ),
-                  const Spacer(),
-                  const SizedBox(width: 44),
                 ],
-              ),
-
-              const SizedBox(height: 18),
-
-              Text("SUMMARY", style: TextStyle(color: muted, fontWeight: FontWeight.w900, letterSpacing: 1.1)),
-              const SizedBox(height: 10),
-
-              _AccountCard(
-                item: accounts[0],
-                selected: selectedIndex == 0,
-                teal: teal,
-                onTap: () => setState(() => selectedIndex = 0),
-              ),
-
-              const SizedBox(height: 18),
-
-              Text("CONNECTED ACCOUNTS", style: TextStyle(color: muted, fontWeight: FontWeight.w900, letterSpacing: 1.1)),
-              const SizedBox(height: 10),
-
-              Expanded(
-                child: ListView.separated(
-                  itemCount: accounts.length - 1,
-                  separatorBuilder: (_, __) => const SizedBox(height: 12),
-                  itemBuilder: (context, i) {
-                    final idx = i + 1;
-                    return _AccountCard(
-                      item: accounts[idx],
-                      selected: selectedIndex == idx,
-                      teal: teal,
-                      onTap: () => setState(() => selectedIndex = idx),
-                    );
-                  },
-                ),
-              ),
-
-              const SizedBox(height: 14),
-
-              // Link new account button
-              SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: teal,
-                    foregroundColor: Colors.black,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-                    elevation: 0,
-                  ),
-                  icon: const Icon(Icons.add),
-                  label: const Text(
-                    "Link New Account",
-                    style: TextStyle(fontWeight: FontWeight.w900),
-                  ),
-                  onPressed: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text("Link account flow later (backend).")),
-                    );
-                  },
-                ),
-              ),
-            ],
+              );
+            },
           ),
         ),
       ),
     );
   }
+
+  Future<void> _showAddAccountSheet(BuildContext context) async {
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: Colors.white,
+      builder: (_) => const _AddAccountSheet(),
+    );
+  }
 }
 
-class _AccountItem {
-  final String title;
-  final String subtitle;
-  final String amount;
-  final IconData icon;
-  final bool isSummary;
+class _AddAccountSheet extends StatefulWidget {
+  const _AddAccountSheet();
 
-  const _AccountItem({
-    required this.title,
-    required this.subtitle,
-    required this.amount,
-    required this.icon,
-    this.isSummary = false,
-  });
+  @override
+  State<_AddAccountSheet> createState() => _AddAccountSheetState();
 }
 
-class _AccountCard extends StatelessWidget {
-  final _AccountItem item;
-  final bool selected;
-  final Color teal;
-  final VoidCallback onTap;
-
-  const _AccountCard({
-    required this.item,
-    required this.selected,
-    required this.teal,
-    required this.onTap,
-  });
+class _AddAccountSheetState extends State<_AddAccountSheet> {
+  BankInstitution? selectedBank;
+  final _accountNameController = TextEditingController();
+  final _balanceController = TextEditingController();
+  final _maskedNumberController = TextEditingController(text: "•••• ");
+  
+  @override
+  void dispose() {
+    _accountNameController.dispose();
+    _balanceController.dispose();
+    _maskedNumberController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
+    final teal = const Color(0xFF29D6C7);
     final textDark = const Color(0xFF0F172A);
     final muted = const Color(0xFF64748B);
 
-    return Card(
-      child: InkWell(
-        borderRadius: BorderRadius.circular(20),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: selected ? teal : Colors.transparent,
-              width: selected ? 2 : 1,
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+        left: 24,
+        right: 24,
+        top: 10,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text("Connect Bank Account", style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: textDark)),
+          const SizedBox(height: 8),
+          Text("Select your bank to link securely.", style: TextStyle(color: muted, fontWeight: FontWeight.w600)),
+          
+          const SizedBox(height: 24),
+
+          // Bank Selector
+          if (selectedBank == null) ...[
+            Text("Popular Banks", style: TextStyle(color: muted, fontWeight: FontWeight.w800, fontSize: 13, letterSpacing: 1.1)),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 200,
+              child: GridView.count(
+                crossAxisCount: 3,
+                mainAxisSpacing: 12,
+                crossAxisSpacing: 12,
+                childAspectRatio: 1.1,
+                shrinkWrap: true,
+                children: IndianBanks.banks.take(6).map((bank) {
+                  return InkWell(
+                    onTap: () {
+                      setState(() {
+                        selectedBank = bank;
+                        _accountNameController.text = "${bank.name} Checking";
+                      });
+                    },
+                    borderRadius: BorderRadius.circular(16),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFFE5E7EB)),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.account_balance, color: Color(bank.color), size: 28),
+                          const SizedBox(height: 8),
+                          Text(
+                            bank.name,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: textDark),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
             ),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEFF2F6),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Icon(item.icon, color: const Color(0xFF334155)),
+            Center(
+              child: TextButton(
+                onPressed: () {
+                   showModalBottomSheet(
+                    context: context,
+                    showDragHandle: true,
+                    isScrollControlled: true,
+                    backgroundColor: Colors.white,
+                    builder: (ctx) => DraggableScrollableSheet(
+                      expand: false,
+                      initialChildSize: 0.7,
+                      maxChildSize: 0.9,
+                      minChildSize: 0.5,
+                      builder: (_, controller) => Column(
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.all(16.0),
+                            child: Text("Select Bank", style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: textDark)),
+                          ),
+                          Expanded(
+                            child: ListView.separated(
+                              controller: controller,
+                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                              itemCount: IndianBanks.banks.length,
+                              separatorBuilder: (_, __) => const Divider(height: 1),
+                              itemBuilder: (_, i) {
+                                final bank = IndianBanks.banks[i];
+                                return ListTile(
+                                  contentPadding: EdgeInsets.zero,
+                                  leading: Container(
+                                    width: 40,
+                                    height: 40,
+                                    decoration: BoxDecoration(
+                                      color: Color(bank.color).withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Icon(Icons.account_balance, color: Color(bank.color), size: 20),
+                                  ),
+                                  title: Text(bank.name, style: TextStyle(fontWeight: FontWeight.w700, color: textDark)),
+                                  onTap: () {
+                                    Navigator.pop(ctx);
+                                    setState(() {
+                                      selectedBank = bank;
+                                      _accountNameController.text = "${bank.name} Checking";
+                                    });
+                                  },
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+                child: Text("View All Banks", style: TextStyle(color: teal, fontWeight: FontWeight.w800)),
               ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(item.title, style: TextStyle(color: textDark, fontWeight: FontWeight.w900)),
-                    const SizedBox(height: 4),
-                    Text(item.subtitle, style: TextStyle(color: muted, fontWeight: FontWeight.w600)),
-                  ],
-                ),
+            ),
+          ] else ...[
+            // Details Form
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Color(selectedBank!.color).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Color(selectedBank!.color).withOpacity(0.2)),
               ),
-              const SizedBox(width: 10),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
+              child: Row(
                 children: [
-                  Text(item.amount, style: TextStyle(color: textDark, fontWeight: FontWeight.w900)),
-                  const SizedBox(height: 6),
-                  if (selected)
-                    Container(
-                      width: 22,
-                      height: 22,
-                      decoration: BoxDecoration(color: teal, shape: BoxShape.circle),
-                      child: const Icon(Icons.check, size: 16, color: Colors.white),
-                    )
+                  Icon(Icons.account_balance, color: Color(selectedBank!.color)),
+                  const SizedBox(width: 12),
+                  Text(selectedBank!.name, style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.change_circle_outlined),
+                    onPressed: () => setState(() => selectedBank = null),
+                  ),
                 ],
               ),
-            ],
-          ),
-        ),
+            ),
+            
+            const SizedBox(height: 16),
+            
+            TextField(
+              controller: _accountNameController,
+              decoration: InputDecoration(
+                labelText: "Account Name",
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+            
+            const SizedBox(height: 12),
+            
+            TextField(
+              controller: _balanceController,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: "Current Balance (₹)",
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+            
+            const SizedBox(height: 12),
+            
+            TextField(
+              controller: _maskedNumberController,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: "Last 4 digits",
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+            
+            const SizedBox(height: 24),
+            
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton(
+                onPressed: () async {
+                  if (_balanceController.text.isEmpty) return;
+                  
+                  final success = await context.read<BankProvider>().addAccount(
+                    institutionId: selectedBank!.id,
+                    institutionName: selectedBank!.name,
+                    accountName: _accountNameController.text,
+                    accountType: AccountType.savings,
+                    maskedNumber: "•••• ${_maskedNumberController.text.replaceAll(RegExp(r'[^0-9]'), '')}",
+                    balance: double.tryParse(_balanceController.text) ?? 0.0,
+                  );
+                  
+                  if (mounted && success) {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text("Account connected successfully!")),
+                    );
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: teal,
+                  foregroundColor: Colors.black,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                ),
+                child: const Text("Securely Connect", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+              ),
+            ),
+          ],
+
+          const SizedBox(height: 30),
+        ],
       ),
     );
   }
 }
+
+
 
 class _SettingsSectionTitle extends StatelessWidget {
   final String text;
@@ -4648,12 +4925,8 @@ class _ProfileSideSheet extends StatelessWidget {
             ? "Last sync: ${_formatDate(user!.lastLoginAt!)}"
             : "Not synced yet";
 
-        // Linked accounts (still mock for now - will be real when bank linking is implemented)
-        const accounts = [
-          ("Chase Checking", "•••• 1234"),
-          ("Ally Savings", "•••• 5678"),
-          ("Amex Credit", "•••• 9012"),
-        ];
+        // Linked accounts
+        final accounts = context.watch<BankProvider>().accounts;
 
     return SafeArea(
       child: Container(
@@ -4744,8 +5017,11 @@ class _ProfileSideSheet extends StatelessWidget {
                   const Spacer(),
                   TextButton(
                     onPressed: () {
-                      // You already have SelectAccountScreen in Settings,
-                      // you can route there later if you want.
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const SelectAccountScreen()),
+                      );
                     },
                     child: Text("Manage", style: TextStyle(color: teal, fontWeight: FontWeight.w900)),
                   )
@@ -4754,44 +5030,54 @@ class _ProfileSideSheet extends StatelessWidget {
             ),
 
             Expanded(
-              child: ListView.separated(
-                padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-                itemCount: accounts.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 12),
-                itemBuilder: (_, i) {
-                  final a = accounts[i];
-                  return Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(14),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 44,
-                            height: 44,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFEFF2F6),
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: const Icon(Icons.account_balance_rounded, color: Color(0xFF334155)),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+              child: accounts.isEmpty
+                  ? Center(
+                      child: Text(
+                        "No accounts linked",
+                        style: TextStyle(color: muted, fontWeight: FontWeight.w600),
+                      ),
+                    )
+                  : ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+                      itemCount: accounts.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 12),
+                      itemBuilder: (_, i) {
+                        final a = accounts[i];
+                        final bankMeta = IndianBanks.getById(a.institutionId);
+                        final bankColor = bankMeta != null ? Color(bankMeta.color) : const Color(0xFF334155);
+
+                        return Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(14),
+                            child: Row(
                               children: [
-                                Text(a.$1,
-                                    style: TextStyle(color: textDark, fontWeight: FontWeight.w900)),
-                                const SizedBox(height: 4),
-                                Text(a.$2, style: TextStyle(color: muted, fontWeight: FontWeight.w700)),
+                                Container(
+                                  width: 44,
+                                  height: 44,
+                                  decoration: BoxDecoration(
+                                    color: bankColor.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  child: Icon(Icons.account_balance_rounded, color: bankColor),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(a.accountName,
+                                          style: TextStyle(color: textDark, fontWeight: FontWeight.w900)),
+                                      const SizedBox(height: 4),
+                                      Text("${a.institutionName} • ${a.maskedNumber}", style: TextStyle(color: muted, fontWeight: FontWeight.w700)),
+                                    ],
+                                  ),
+                                ),
                               ],
                             ),
                           ),
-                        ],
-                      ),
+                        );
+                      },
                     ),
-                  );
-                },
-              ),
             ),
 
             // Optional: logout / settings shortcut
