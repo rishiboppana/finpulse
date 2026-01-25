@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import 'providers/auth_provider.dart';
+import 'screens/login_screen.dart';
 
 void main() => runApp(const FinPulseApp());
 
@@ -8,24 +12,106 @@ class FinPulseApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const seed = Color(0xFF29D6C7); // teal like screenshot
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(seedColor: seed),
-        scaffoldBackgroundColor: const Color(0xFFF7F8FA),
-        cardTheme: const CardThemeData(
-          elevation: 0,
-          margin: EdgeInsets.zero,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.all(Radius.circular(20)),
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => AuthProvider()),
+      ],
+      child: MaterialApp(
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          useMaterial3: true,
+          colorScheme: ColorScheme.fromSeed(seedColor: seed),
+          scaffoldBackgroundColor: const Color(0xFFF7F8FA),
+          cardTheme: const CardThemeData(
+            elevation: 0,
+            margin: EdgeInsets.zero,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.all(Radius.circular(20)),
+            ),
           ),
         ),
+        home: const AuthGate(),
       ),
-      home: const MainShell(),
     );
   }
 }
+
+/// Auth gate that shows login or main app based on auth state.
+class AuthGate extends StatelessWidget {
+  const AuthGate({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<AuthProvider>(
+      builder: (context, auth, _) {
+        // Still initializing - show splash
+        if (auth.status == AuthStatus.initial) {
+          return const _SplashScreen();
+        }
+
+        // Authenticated - show main app
+        if (auth.isAuthenticated) {
+          return const MainShell();
+        }
+
+        // Not authenticated - show login
+        return const LoginScreen();
+      },
+    );
+  }
+}
+
+/// Simple splash screen while checking auth state
+class _SplashScreen extends StatelessWidget {
+  const _SplashScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    final teal = const Color(0xFF29D6C7);
+    return Scaffold(
+      backgroundColor: const Color(0xFFF7F8FA),
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: teal.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: Icon(
+                Icons.account_balance_wallet_rounded,
+                size: 42,
+                color: teal,
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              "FinPulse",
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.w900,
+                color: const Color(0xFF0F172A),
+              ),
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.5,
+                color: teal,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
@@ -2018,10 +2104,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Card(
               child: InkWell(
                 borderRadius: BorderRadius.circular(20),
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Logout action later (backend).")),
-                  );
+                onTap: () async {
+                  final auth = context.read<AuthProvider>();
+                  await auth.signOut();
                 },
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 18),
@@ -4554,14 +4639,21 @@ class _ProfileSideSheet extends StatelessWidget {
     final muted = const Color(0xFF64748B);
     final teal = const Color(0xFF29D6C7);
 
-    // UI-only mock data (backend later)
-    const userName = "Rishi Boppana";
-    const lastSync = "Last sync: 18 Jan, 6:40 PM";
-    const accounts = [
-      ("Chase Checking", "•••• 1234"),
-      ("Ally Savings", "•••• 5678"),
-      ("Amex Credit", "•••• 9012"),
-    ];
+    return Consumer<AuthProvider>(
+      builder: (context, auth, _) {
+        final user = auth.user;
+        final userName = user?.name ?? "Guest User";
+        final userEmail = user?.email ?? "";
+        final lastSync = user?.lastLoginAt != null
+            ? "Last sync: ${_formatDate(user!.lastLoginAt!)}"
+            : "Not synced yet";
+
+        // Linked accounts (still mock for now - will be real when bank linking is implemented)
+        const accounts = [
+          ("Chase Checking", "•••• 1234"),
+          ("Ally Savings", "•••• 5678"),
+          ("Amex Credit", "•••• 9012"),
+        ];
 
     return SafeArea(
       child: Container(
@@ -4625,7 +4717,12 @@ class _ProfileSideSheet extends StatelessWidget {
                             Text(userName,
                                 style: TextStyle(
                                     color: textDark, fontWeight: FontWeight.w900, fontSize: 16)),
-                            const SizedBox(height: 6),
+                            if (userEmail.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Text(userEmail,
+                                  style: TextStyle(color: muted, fontWeight: FontWeight.w600, fontSize: 13)),
+                            ],
+                            const SizedBox(height: 4),
                             Text(lastSync,
                                 style: TextStyle(color: muted, fontWeight: FontWeight.w700)),
                           ],
@@ -4722,6 +4819,15 @@ class _ProfileSideSheet extends StatelessWidget {
         ),
       ),
     );
+      }, // end Consumer builder
+    ); // end Consumer
+  }
+
+  static String _formatDate(DateTime d) {
+    const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    final hour = d.hour > 12 ? d.hour - 12 : (d.hour == 0 ? 12 : d.hour);
+    final ampm = d.hour >= 12 ? "PM" : "AM";
+    return "${d.day} ${months[d.month - 1]}, $hour:${d.minute.toString().padLeft(2, '0')} $ampm";
   }
 }
 
