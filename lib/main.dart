@@ -2294,108 +2294,116 @@ class _SelectAccountScreenState extends State<SelectAccountScreen> {
                           final bankMeta = IndianBanks.getById(acc.institutionId);
                           final bankColor = bankMeta != null ? Color(bankMeta.color) : const Color(0xFF334155);
 
-                          // Allow swiping to remove account
-                          return Dismissible(
-                            key: Key(acc.id),
-                            direction: DismissDirection.endToStart,
-                            background: Container(
-                              alignment: Alignment.centerRight,
-                              padding: const EdgeInsets.only(right: 20),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFF43F5E),
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: const Icon(Icons.delete_outline_rounded, color: Colors.white, size: 28),
-                            ),
-                            confirmDismiss: (direction) async {
-                              return await showDialog(
-                                context: context,
-                                builder: (ctx) => AlertDialog(
-                                  title: const Text("Remove Account?"),
-                                  content: Text("Are you sure you want to unlink ${acc.accountName}?"),
-                                  actions: [
-                                    TextButton(
-                                      onPressed: () => Navigator.of(ctx).pop(false),
-                                      child: const Text("Cancel"),
-                                    ),
-                                    TextButton(
-                                      onPressed: () => Navigator.of(ctx).pop(true),
-                                      style: TextButton.styleFrom(foregroundColor: const Color(0xFFF43F5E)),
-                                      child: const Text("Remove"),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            },
-                            onDismissed: (direction) {
-                              context.read<BankProvider>().removeAccount(acc.id);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text("${acc.accountName} removed"),
-                                  action: SnackBarAction(
-                                    label: "Undo",
-                                    onPressed: () {
-                                      // Re-add account logic if needed, for now just simple delete
-                                    },
+                          return Card(
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(20),
+                              onTap: () => setState(() => selectedIndex = idx),
+                              child: Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: isSelected ? teal : Colors.transparent,
+                                    width: isSelected ? 2 : 1,
                                   ),
                                 ),
-                              );
-                            },
-                            child: Card(
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(20),
-                                onTap: () => setState(() => selectedIndex = idx),
-                                child: Container(
-                                  padding: const EdgeInsets.all(16),
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(20),
-                                    border: Border.all(
-                                      color: isSelected ? teal : Colors.transparent,
-                                      width: isSelected ? 2 : 1,
-                                    ),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Container(
-                                        width: 48,
-                                        height: 48,
-                                        decoration: BoxDecoration(
-                                          color: bankColor.withOpacity(0.1),
-                                          borderRadius: BorderRadius.circular(16),
+                                child: Column(
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Container(
+                                          width: 48,
+                                          height: 48,
+                                          decoration: BoxDecoration(
+                                            color: bankColor.withOpacity(0.1),
+                                            borderRadius: BorderRadius.circular(16),
+                                          ),
+                                          child: Icon(
+                                            Icons.account_balance_rounded, 
+                                            color: bankColor,
+                                          ),
                                         ),
-                                        child: Icon(
-                                          Icons.account_balance_rounded, 
-                                          color: bankColor,
+                                        const SizedBox(width: 14),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(acc.accountName, style: TextStyle(color: textDark, fontWeight: FontWeight.w900)),
+                                              const SizedBox(height: 4),
+                                              Text("${acc.institutionName} • ${acc.maskedNumber}", style: TextStyle(color: muted, fontWeight: FontWeight.w600)),
+                                            ],
+                                          ),
                                         ),
-                                      ),
-                                      const SizedBox(width: 14),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                        const SizedBox(width: 10),
+                                        Column(
+                                          crossAxisAlignment: CrossAxisAlignment.end,
                                           children: [
-                                            Text(acc.accountName, style: TextStyle(color: textDark, fontWeight: FontWeight.w900)),
-                                            const SizedBox(height: 4),
-                                            Text("${acc.institutionName} • ${acc.maskedNumber}", style: TextStyle(color: muted, fontWeight: FontWeight.w600)),
+                                            Text(acc.formattedBalance, style: TextStyle(color: textDark, fontWeight: FontWeight.w900)),
+                                            const SizedBox(height: 6),
+                                            if (isSelected)
+                                              Container(
+                                                width: 22,
+                                                height: 22,
+                                                decoration: BoxDecoration(color: teal, shape: BoxShape.circle),
+                                                child: const Icon(Icons.check, size: 16, color: Colors.white),
+                                              )
                                           ],
                                         ),
-                                      ),
-                                      const SizedBox(width: 10),
-                                      Column(
-                                        crossAxisAlignment: CrossAxisAlignment.end,
+                                      ],
+                                    ),
+                                    
+                                    // Action Buttons Row
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 12),
+                                      child: Row(
+                                        mainAxisAlignment: MainAxisAlignment.end,
                                         children: [
-                                          Text(acc.formattedBalance, style: TextStyle(color: textDark, fontWeight: FontWeight.w900)),
-                                          const SizedBox(height: 6),
-                                          if (isSelected)
-                                            Container(
-                                              width: 22,
-                                              height: 22,
-                                              decoration: BoxDecoration(color: teal, shape: BoxShape.circle),
-                                              child: const Icon(Icons.check, size: 16, color: Colors.white),
-                                            )
+                                          TextButton.icon(
+                                            onPressed: () => _showAddAccountSheet(context, account: acc),
+                                            icon: const Icon(Icons.edit_rounded, size: 18),
+                                            label: const Text("Edit"),
+                                            style: TextButton.styleFrom(
+                                              foregroundColor: textDark,
+                                              visualDensity: VisualDensity.compact,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          TextButton.icon(
+                                            onPressed: () async {
+                                              final confirm = await showDialog<bool>(
+                                                context: context,
+                                                builder: (ctx) => AlertDialog(
+                                                  title: const Text("Remove Account?"),
+                                                  content: Text("Are you sure you want to unlink ${acc.accountName}?"),
+                                                  actions: [
+                                                    TextButton(
+                                                      onPressed: () => Navigator.of(ctx).pop(false),
+                                                      child: const Text("Cancel"),
+                                                    ),
+                                                    TextButton(
+                                                      onPressed: () => Navigator.of(ctx).pop(true),
+                                                      style: TextButton.styleFrom(foregroundColor: const Color(0xFFF43F5E)),
+                                                      child: const Text("Remove"),
+                                                    ),
+                                                  ],
+                                                ),
+                                              );
+                                              
+                                              if (confirm == true) {
+                                                context.read<BankProvider>().removeAccount(acc.id);
+                                              }
+                                            },
+                                            icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                                            label: const Text("Remove"),
+                                            style: TextButton.styleFrom(
+                                              foregroundColor: const Color(0xFFF43F5E),
+                                              visualDensity: VisualDensity.compact,
+                                            ),
+                                          ),
                                         ],
                                       ),
-                                    ],
-                                  ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),
@@ -2434,29 +2442,99 @@ class _SelectAccountScreenState extends State<SelectAccountScreen> {
     );
   }
 
-  Future<void> _showAddAccountSheet(BuildContext context) async {
+  Future<void> _showAddAccountSheet(BuildContext context, {BankAccount? account}) async {
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
       backgroundColor: Colors.white,
-      builder: (_) => const _AddAccountSheet(),
+      builder: (_) => _BankFormSheet(account: account),
     );
   }
 }
 
-class _AddAccountSheet extends StatefulWidget {
-  const _AddAccountSheet();
+class _BankFormSheet extends StatefulWidget {
+  final BankAccount? account;
+  const _BankFormSheet({this.account});
 
   @override
-  State<_AddAccountSheet> createState() => _AddAccountSheetState();
+  State<_BankFormSheet> createState() => _BankFormSheetState();
 }
 
-class _AddAccountSheetState extends State<_AddAccountSheet> {
+class _BankFormSheetState extends State<_BankFormSheet> {
   BankInstitution? selectedBank;
-  final _accountNameController = TextEditingController();
-  final _balanceController = TextEditingController();
-  final _maskedNumberController = TextEditingController(text: "•••• ");
+  late TextEditingController _accountNameController;
+  late TextEditingController _balanceController;
+  late TextEditingController _maskedNumberController;
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final acc = widget.account;
+    if (acc != null) {
+      selectedBank = IndianBanks.getById(acc.institutionId);
+      _accountNameController = TextEditingController(text: acc.accountName);
+      _balanceController = TextEditingController(text: acc.balance.toString());
+      _maskedNumberController = TextEditingController(text: acc.maskedNumber.replaceAll("•••• ", ""));
+    } else {
+      _accountNameController = TextEditingController();
+      _balanceController = TextEditingController();
+      _maskedNumberController = TextEditingController(text: "•••• ");
+    }
+  }
+  
+  Future<void> _submit() async {
+    if (selectedBank == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please select a bank first")));
+      return;
+    }
+    if (_accountNameController.text.isEmpty || _balanceController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please fill in all fields")));
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      final isEdit = widget.account != null;
+      bool success;
+
+      final balance = double.tryParse(_balanceController.text) ?? 0.0;
+      // Ensure masked number has dots
+      var masked = _maskedNumberController.text.replaceAll(RegExp(r'[^0-9]'), '');
+      if (!masked.startsWith("••••")) masked = "•••• $masked";
+
+      if (isEdit) {
+        final updated = widget.account!.copyWith(
+          institutionId: selectedBank!.id,
+          institutionName: selectedBank!.name,
+          accountName: _accountNameController.text,
+          maskedNumber: masked,
+          balance: balance,
+        );
+        success = await context.read<BankProvider>().updateAccount(updated);
+      } else {
+        success = await context.read<BankProvider>().addAccount(
+          institutionId: selectedBank!.id,
+          institutionName: selectedBank!.name,
+          accountName: _accountNameController.text,
+          accountType: AccountType.savings,
+          maskedNumber: masked,
+          balance: balance,
+        );
+      }
+
+      if (mounted && success) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(isEdit ? "Account updated!" : "Account connected successfully!")),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
   
   @override
   void dispose() {
@@ -2471,6 +2549,7 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
     final teal = const Color(0xFF29D6C7);
     final textDark = const Color(0xFF0F172A);
     final muted = const Color(0xFF64748B);
+    final isEdit = widget.account != null;
 
     return Padding(
       padding: EdgeInsets.only(
@@ -2483,9 +2562,9 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text("Connect Bank Account", style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: textDark)),
+          Text(isEdit ? "Edit Account" : "Connect Bank Account", style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: textDark)),
           const SizedBox(height: 8),
-          Text("Select your bank to link securely.", style: TextStyle(color: muted, fontWeight: FontWeight.w600)),
+          Text(isEdit ? "Update account details." : "Select your bank to link securely.", style: TextStyle(color: muted, fontWeight: FontWeight.w600)),
           
           const SizedBox(height: 24),
 
@@ -2654,34 +2733,23 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
               width: double.infinity,
               height: 52,
               child: ElevatedButton(
-                onPressed: () async {
-                  if (_balanceController.text.isEmpty) return;
-                  
-                  final success = await context.read<BankProvider>().addAccount(
-                    institutionId: selectedBank!.id,
-                    institutionName: selectedBank!.name,
-                    accountName: _accountNameController.text,
-                    accountType: AccountType.savings,
-                    maskedNumber: "•••• ${_maskedNumberController.text.replaceAll(RegExp(r'[^0-9]'), '')}",
-                    balance: double.tryParse(_balanceController.text) ?? 0.0,
-                  );
-                  
-                  if (mounted && success) {
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text("Account connected successfully!")),
-                    );
-                  }
-                },
+                onPressed: _isLoading ? null : _submit,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: teal,
                   foregroundColor: Colors.black,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 ),
-                child: const Text("Securely Connect", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+                child: _isLoading
+                    ? const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.black),
+                      )
+                    : Text(isEdit ? "Update Account" : "Securely Connect", style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
               ),
             ),
           ],
+
 
           const SizedBox(height: 30),
         ],
