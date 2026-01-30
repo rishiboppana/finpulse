@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 
+    Accessibility Service Configuration for FinPulse
+    "Proactive UI Consciousness Layer"
+    
+    PRIVACY: Only monitors specific UPI apps for payment success screens.
+    NO keystroke logging, NO personal data collection.
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/accessibility_service_description"
+    android:accessibilityEventTypes="typeWindowContentChanged|typeWindowStateChanged"
+    android:accessibilityFlags="flagRetrieveInteractiveWindows"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:notificationTimeout="100"
+    android:canRetrieveWindowContent="true"
+    android:settingsActivity="com.example.flutter_application_1.MainActivity"
+    android:packageNames="com.phonepe.app,com.google.android.apps.nbu.paisa.user" />

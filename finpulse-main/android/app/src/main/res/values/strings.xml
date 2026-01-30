@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">FinPulse</string>
+    <string name="accessibility_service_description">FinPulse uses this to instantly detect payments when you complete a transaction in PhonePe or GPay. This helps you categorize expenses in real-time. No personal data is collected.</string>
+</resources>
