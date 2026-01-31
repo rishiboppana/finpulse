@@ -5,6 +5,7 @@ import 'transaction_parser.dart';
 import 'gemini_service.dart';
 import 'notification_service.dart';
 import 'merchant_learning_service.dart';
+import 'transaction_storage_service.dart';
 
 /// Native Detection Service for FinPulse
 /// 
@@ -94,6 +95,9 @@ class NativeDetectionService {
     
     if (result.success && result.transaction != null) {
       final transaction = result.transaction!;
+      
+      // Save to local storage
+      await TransactionStorageService.instance.addTransaction(transaction);
       
       // Check if merchant is already learned
       final merchantId = transaction.rawMerchantId;

@@ -101,7 +101,10 @@ class TransactionNotificationListener : NotificationListenerService() {
         
         Log.d(TAG, "Transaction detected from $packageName: $title")
         
-        // Send to Flutter
+        // Show FinPulse notification immediately (works even when app is in background)
+        showFinPulseNotification(title, bigText, packageName)
+        
+        // Send to Flutter (only works when app is active)
         sendToFlutter(
             mapOf(
                 "source" to "notification",
@@ -111,6 +114,37 @@ class TransactionNotificationListener : NotificationListenerService() {
                 "timestamp" to timestamp
             )
         )
+    }
+    
+    /**
+     * Show a FinPulse notification for the detected transaction
+     */
+    private fun showFinPulseNotification(title: String, text: String, packageName: String) {
+        try {
+            // Extract amount from text
+            val amountPattern = Regex("""(?:₹|rs\.?|inr)\s*([\d,]+(?:\.\d{2})?)""", RegexOption.IGNORE_CASE)
+            val amountMatch = amountPattern.find(text)
+            val amount = amountMatch?.groupValues?.get(1)?.replace(",", "") ?: "0"
+            
+            // Get merchant name (use title or extracted info)
+            val merchant = title.take(30)
+            
+            // Generate unique notification ID
+            val notificationId = System.currentTimeMillis().toInt()
+            
+            // Use NotificationHelper to show notification
+            NotificationHelper.showTransactionNotification(
+                context = this,
+                notificationId = notificationId,
+                amount = amount,
+                merchant = merchant,
+                rawText = text
+            )
+            
+            Log.d(TAG, "FinPulse notification shown: ₹$amount at $merchant")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to show FinPulse notification: ${e.message}")
+        }
     }
     
     /**

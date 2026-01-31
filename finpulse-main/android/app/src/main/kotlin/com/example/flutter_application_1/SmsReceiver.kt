@@ -10,9 +10,11 @@ import io.flutter.plugin.common.MethodChannel
 /**
  * SMS Receiver for Bank Transaction Alerts
  * 
- * Listens for incoming bank SMS messages and forwards them to Flutter for parsing.
+ * Listens for incoming bank SMS messages and:
+ * 1. If Flutter is running: forwards to Flutter for Golden Window
+ * 2. If Flutter is NOT running: shows system notification with quick actions
  * 
- * Privacy: Only forwards SMS from known bank sender IDs.
+ * Privacy: Uses content-first detection (checks message body, not sender).
  */
 class SmsReceiver : BroadcastReceiver() {
 
@@ -20,6 +22,9 @@ class SmsReceiver : BroadcastReceiver() {
         private const val TAG = "FinPulseSmsReceiver"
         
         var methodChannel: MethodChannel? = null
+        
+        // Track if Flutter engine is alive
+        var isFlutterEngineActive: Boolean = false
     }
 
     override fun onReceive(context: Context?, intent: Intent?) {
@@ -27,6 +32,7 @@ class SmsReceiver : BroadcastReceiver() {
             return
         }
         
+        context ?: return
         val bundle = intent.extras ?: return
         
         try {
@@ -39,20 +45,38 @@ class SmsReceiver : BroadcastReceiver() {
                 val body = smsMessage.displayMessageBody ?: ""
                 
                 // CONTENT-FIRST: Check message body for transaction indicators
-                // This catches ALL bank SMS regardless of sender format
                 if (!isLikelyTransaction(body)) continue
                 
                 Log.d(TAG, "Transaction SMS detected from $sender")
                 
-                // Send to Flutter for parsing
-                sendToFlutter(
-                    mapOf(
-                        "source" to "sms",
-                        "sender" to sender,
-                        "body" to body,
-                        "timestamp" to System.currentTimeMillis()
+                // Extract amount for notification
+                val amount = extractAmount(body) ?: "?"
+                val merchant = extractMerchant(body) ?: ""
+                
+                // Check if Flutter engine is alive
+                if (isFlutterEngineActive && methodChannel != null) {
+                    // Flutter is running - send via MethodChannel for Golden Window
+                    Log.d(TAG, "Forwarding to Flutter (app active)")
+                    sendToFlutter(
+                        mapOf(
+                            "source" to "sms",
+                            "sender" to sender,
+                            "body" to body,
+                            "timestamp" to System.currentTimeMillis()
+                        )
                     )
-                )
+                } else {
+                    // Flutter NOT running - show system notification
+                    Log.d(TAG, "Showing system notification (app inactive)")
+                    val notificationId = System.currentTimeMillis().toInt()
+                    NotificationHelper.showTransactionNotification(
+                        context,
+                        notificationId,
+                        amount,
+                        merchant,
+                        body
+                    )
+                }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error processing SMS: ${e.message}")
@@ -61,7 +85,6 @@ class SmsReceiver : BroadcastReceiver() {
     
     /**
      * Quick check if SMS looks like a transaction
-     * This is the ONLY filter - it catches all bank SMS regardless of sender format
      */
     private fun isLikelyTransaction(body: String): Boolean {
         val keywords = listOf(
@@ -72,6 +95,40 @@ class SmsReceiver : BroadcastReceiver() {
         )
         val bodyLower = body.lowercase()
         return keywords.any { bodyLower.contains(it) }
+    }
+    
+    /**
+     * Extract amount from SMS body
+     */
+    private fun extractAmount(body: String): String? {
+        val patterns = listOf(
+            Regex("""[₹₨]\s*([\d,]+\.?\d*)"""),
+            Regex("""Rs\.?\s*([\d,]+\.?\d*)""", RegexOption.IGNORE_CASE),
+            Regex("""INR\s*([\d,]+\.?\d*)""", RegexOption.IGNORE_CASE)
+        )
+        
+        for (pattern in patterns) {
+            pattern.find(body)?.let { match ->
+                return match.groupValues.getOrNull(1)?.replace(",", "")
+            }
+        }
+        return null
+    }
+    
+    /**
+     * Extract merchant name from SMS body
+     */
+    private fun extractMerchant(body: String): String? {
+        val patterns = listOf(
+            Regex("""(?:to|at|@)\s+([A-Za-z0-9_@.\s]+?)(?:\s+₹|\s+Rs|\s+on|$)""", RegexOption.IGNORE_CASE)
+        )
+        
+        for (pattern in patterns) {
+            pattern.find(body)?.let { match ->
+                return match.groupValues.getOrNull(1)?.trim()?.take(20)
+            }
+        }
+        return null
     }
     
     /**

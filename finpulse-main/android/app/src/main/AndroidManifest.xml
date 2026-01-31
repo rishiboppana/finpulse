@@ -6,6 +6,12 @@
     <uses-permission android:name="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     
+    <!-- Permissions for Voice Input -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    
+    <!-- Camera permission for receipt scanning -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    
     <application
         android:label="FinPulse"
         android:name="${applicationName}"
@@ -61,10 +67,19 @@
         <!-- SMS Receiver for Bank Transaction Alerts -->
         <receiver
             android:name=".SmsReceiver"
-            android:permission="android.permission.BROADCAST_SMS"
             android:exported="true">
             <intent-filter android:priority="999">
                 <action android:name="android.provider.Telephony.SMS_RECEIVED" />
+            </intent-filter>
+        </receiver>
+        
+        <!-- Notification Action Receiver for quick category buttons and replies -->
+        <receiver
+            android:name=".NotificationActionReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.finpulse.ACTION_CATEGORY" />
+                <action android:name="com.finpulse.ACTION_REPLY" />
             </intent-filter>
         </receiver>
         

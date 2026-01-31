@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:permission_handler/permission_handler.dart';
 
 import '../models/transaction.dart';
 import '../services/transaction_parser.dart';
 import '../services/gemini_service.dart';
 import '../services/merchant_learning_service.dart';
 import '../services/notification_service.dart';
+import '../services/transaction_storage_service.dart';
 
 /// Mock Trigger Screen for Hackathon Demo
 /// Allows triggering simulated payment notifications to test the AI pipeline.
@@ -394,6 +397,11 @@ class GoldenWindowSheet extends StatefulWidget {
 class GoldenWindowSheetState extends State<GoldenWindowSheet> {
   final _tagController = TextEditingController();
   String? _selectedCategory;
+  
+  // Speech to text
+  final stt.SpeechToText _speech = stt.SpeechToText();
+  bool _isListening = false;
+  bool _speechAvailable = false;
 
   static const _categories = [
     '🍕 Food',
@@ -410,6 +418,64 @@ class GoldenWindowSheetState extends State<GoldenWindowSheet> {
   void initState() {
     super.initState();
     _checkLearnedMerchant();
+    _initSpeech();
+  }
+
+  Future<void> _initSpeech() async {
+    final status = await Permission.microphone.request();
+    if (status.isGranted) {
+      _speechAvailable = await _speech.initialize(
+        onStatus: (status) {
+          if (status == 'done' || status == 'notListening') {
+            if (mounted) setState(() => _isListening = false);
+          }
+        },
+        onError: (error) {
+          if (mounted) setState(() => _isListening = false);
+        },
+      );
+    }
+    if (mounted) setState(() {});
+  }
+
+  void _startListening() async {
+    if (!_speechAvailable) {
+      await _initSpeech();
+      if (!_speechAvailable) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Please grant microphone permission'),
+              action: SnackBarAction(label: 'Settings', onPressed: openAppSettings),
+            ),
+          );
+        }
+        return;
+      }
+    }
+
+    setState(() => _isListening = true);
+    
+    await _speech.listen(
+      onResult: (result) {
+        if (mounted) {
+          setState(() {
+            _tagController.text = result.recognizedWords;
+          });
+        }
+        if (result.finalResult) {
+          setState(() => _isListening = false);
+        }
+      },
+      listenFor: const Duration(seconds: 10),
+      pauseFor: const Duration(seconds: 3),
+      localeId: 'en_IN',
+    );
+  }
+
+  void _stopListening() {
+    _speech.stop();
+    setState(() => _isListening = false);
   }
 
   void _checkLearnedMerchant() {
@@ -437,6 +503,7 @@ class GoldenWindowSheetState extends State<GoldenWindowSheet> {
   @override
   void dispose() {
     _tagController.dispose();
+    _speech.stop();
     super.dispose();
   }
 
@@ -448,10 +515,10 @@ class GoldenWindowSheetState extends State<GoldenWindowSheet> {
     if (tag != null) {
       // Save to merchant learning DB
       final merchantId = widget.transaction.rawMerchantId;
+      // Extract category name (remove emoji)
+      final categoryName = tag.replaceAll(RegExp(r'[^\w\s]'), '').trim();
+      
       if (merchantId != null) {
-        // Extract category name (remove emoji)
-        final categoryName = tag.replaceAll(RegExp(r'[^\w\s]'), '').trim();
-        
         await MerchantLearningService.instance.learnMerchant(
           rawMerchantId: merchantId,
           category: categoryName,
@@ -461,11 +528,20 @@ class GoldenWindowSheetState extends State<GoldenWindowSheet> {
         );
       }
       
+      // Save/Update transaction with category to storage
+      final updatedTransaction = widget.transaction.copyWith(
+        category: categoryName,
+        merchantName: _tagController.text.trim().isNotEmpty 
+            ? _tagController.text.trim() 
+            : widget.transaction.merchantName,
+      );
+      await TransactionStorageService.instance.addTransaction(updatedTransaction);
+      
       if (!mounted) return;
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Tagged as "$tag" - FinPulse will remember this!'),
+          content: Text('Saved ₹${widget.transaction.amount.toStringAsFixed(0)} as "$categoryName"'),
           backgroundColor: const Color(0xFF10B981),
         ),
       );
@@ -599,35 +675,53 @@ class GoldenWindowSheetState extends State<GoldenWindowSheet> {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: const Color(0xFFF1F5F9),
+              color: _isListening 
+                  ? const Color(0xFF29D6C7).withOpacity(0.1)
+                  : const Color(0xFFF1F5F9),
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
+              border: Border.all(
+                color: _isListening 
+                    ? const Color(0xFF29D6C7)
+                    : const Color(0xFFE2E8F0),
+                width: _isListening ? 2 : 1,
+              ),
             ),
             child: Row(
               children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
+                GestureDetector(
+                  onTapDown: (_) => _startListening(),
+                  onTapUp: (_) => _stopListening(),
+                  onTapCancel: () => _stopListening(),
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: _isListening ? const Color(0xFF29D6C7) : Colors.white,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      _isListening ? Icons.mic : Icons.mic_rounded,
+                      color: _isListening ? Colors.white : const Color(0xFF29D6C7),
+                    ),
                   ),
-                  child: const Icon(Icons.mic_rounded, color: Color(0xFF29D6C7)),
                 ),
                 const SizedBox(width: 12),
-                const Expanded(
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Speak in Hinglish',
+                        _isListening ? 'Listening...' : 'Speak in Hinglish',
                         style: TextStyle(
                           fontWeight: FontWeight.w700,
                           fontSize: 14,
+                          color: _isListening ? const Color(0xFF29D6C7) : Colors.black,
                         ),
                       ),
                       Text(
-                        'Try: "Chai stall pe bhai"',
-                        style: TextStyle(
+                        _isListening 
+                            ? 'Release to stop' 
+                            : 'Hold mic: "Chai stall pe bhai"',
+                        style: const TextStyle(
                           color: Color(0xFF64748B),
                           fontSize: 12,
                           fontStyle: FontStyle.italic,
@@ -636,16 +730,19 @@ class GoldenWindowSheetState extends State<GoldenWindowSheet> {
                     ],
                   ),
                 ),
-                TextButton(
-                  onPressed: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Voice parsing is coming in the final build! 🎤'),
-                        duration: Duration(seconds: 1),
-                      ),
-                    );
-                  },
-                  child: const Text('Try it'),
+                ElevatedButton(
+                  onPressed: _isListening ? _stopListening : _startListening,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _isListening 
+                        ? Colors.red 
+                        : const Color(0xFF29D6C7),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                  ),
+                  child: Text(_isListening ? 'Stop' : '🎤 Speak'),
                 ),
               ],
             ),

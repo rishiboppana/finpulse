@@ -9,9 +9,16 @@ import 'screens/login_screen.dart';
 import 'screens/mock_trigger_screen.dart';
 import 'screens/learned_merchants_screen.dart';
 import 'screens/detection_settings_screen.dart';
+import 'screens/onboarding_screen.dart';
+import 'screens/chat_screen.dart';
+import 'screens/receipt_scan_screen.dart';
+import 'screens/account_aggregator_screen.dart';
 import 'services/merchant_learning_service.dart';
 import 'services/native_detection_service.dart';
 import 'services/notification_service.dart';
+import 'services/transaction_storage_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'widgets/chart_widgets.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -19,6 +26,7 @@ void main() async {
   // Initialize services
   await MerchantLearningService.instance.init();
   await NativeDetectionService.instance.init();
+  await TransactionStorageService.instance.init();
   
   runApp(const FinPulseApp());
 }
@@ -64,9 +72,39 @@ class AuthGate extends StatefulWidget {
 
 class _AuthGateState extends State<AuthGate> {
   String? _lastUserId;
+  bool? _onboardingComplete;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkOnboardingStatus();
+  }
+
+  Future<void> _checkOnboardingStatus() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _onboardingComplete = prefs.getBool('onboarding_complete') ?? false;
+    });
+  }
+
+  void _onOnboardingComplete() {
+    setState(() {
+      _onboardingComplete = true;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
+    // Still checking onboarding status
+    if (_onboardingComplete == null) {
+      return const _SplashScreen();
+    }
+
+    // Show onboarding on first launch
+    if (!_onboardingComplete!) {
+      return OnboardingScreen(onComplete: _onOnboardingComplete);
+    }
+
     return Consumer<AuthProvider>(
       builder: (context, auth, _) {
         // Still initializing - show splash
@@ -200,6 +238,7 @@ class _MainShellState extends State<MainShell> {
   Widget build(BuildContext context) {
     final pages = const [
       DashboardScreen(),
+      ChatScreen(),
       StatsScreen(),
       CategoriesScreen(),
       SettingsScreen(),
@@ -208,7 +247,7 @@ class _MainShellState extends State<MainShell> {
     return Scaffold(
       body: pages[index],
       floatingActionButton: FloatingActionButton(
-        onPressed: () => showNewTransactionSheet(context),
+        onPressed: () => _showAddOptions(context),
         backgroundColor: const Color(0xFF29D6C7),
         child: const Icon(Icons.add, color: Colors.white),
       ),
@@ -222,6 +261,11 @@ class _MainShellState extends State<MainShell> {
             icon: Icon(Icons.home_outlined),
             selectedIcon: Icon(Icons.home),
             label: "Home",
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.auto_awesome_outlined),
+            selectedIcon: Icon(Icons.auto_awesome),
+            label: "AI Chat",
           ),
           NavigationDestination(
             icon: Icon(Icons.pie_chart_outline),
@@ -242,7 +286,125 @@ class _MainShellState extends State<MainShell> {
       ),
     );
   }
+
+  void _showAddOptions(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(20),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'Add Transaction',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(
+                  child: _AddOptionCard(
+                    icon: Icons.edit_rounded,
+                    label: 'Manual Entry',
+                    color: const Color(0xFF29D6C7),
+                    onTap: () {
+                      Navigator.pop(context);
+                      showNewTransactionSheet(context);
+                    },
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: _AddOptionCard(
+                    icon: Icons.camera_alt_rounded,
+                    label: 'Scan Receipt',
+                    color: const Color(0xFF6366F1),
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const ReceiptScanScreen()),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+          ],
+        ),
+      ),
+    );
+  }
 }
+
+class _AddOptionCard extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _AddOptionCard({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: color.withOpacity(0.3)),
+        ),
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: color,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: Colors.white, size: 28),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              label,
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: color,
+                fontSize: 14,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 //Below is the code for Dashboard or Homepage 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -666,6 +828,38 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 )),
 
             const SizedBox(height: 12),
+
+                // Spending Charts Section
+                Text(
+                  "Spending Overview",
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: textDark),
+                ),
+                const SizedBox(height: 12),
+
+                // Pie Chart - Category Breakdown
+                SpendingPieChart(
+                  data: ChartSampleData.getCategoryData(),
+                  total: ChartSampleData.getCategoryData().fold(0, (sum, item) => sum + item.amount),
+                ),
+
+                const SizedBox(height: 16),
+
+                // Weekly Comparison
+                WeeklyComparisonChart(
+                  thisWeek: ChartSampleData.getWeeklySpends(),
+                  lastWeek: ChartSampleData.getLastWeekSpends(),
+                ),
+
+                const SizedBox(height: 16),
+
+                // Spending Trend Line Chart
+                SpendingTrendChart(
+                  dailySpends: ChartSampleData.getMonthlyTrend(),
+                  labels: ChartSampleData.getMonthLabels(),
+                  title: 'Monthly Spending Trend',
+                ),
+
+                const SizedBox(height: 18),
 
             // Today's Transactions list (with category chip like your sketch)
             Text(
@@ -2104,6 +2298,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ],
             ),
+            const SizedBox(height: 18),
+
+            // FEATURES
+            const _SettingsSectionTitle("FEATURES"),
+            const SizedBox(height: 10),
+            _SettingsCard(
+              children: [
+                _SettingsNavTile(
+                  icon: Icons.receipt_long_rounded,
+                  iconBg: const Color(0xFF3B82F6).withOpacity(0.12),
+                  iconColor: const Color(0xFF3B82F6),
+                  title: "Scan Receipt",
+                  subtitle: "Use camera to add transactions",
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const ReceiptScanScreen()),
+                    );
+                  },
+                ),
+                _SettingsNavTile(
+                  icon: Icons.account_balance_rounded,
+                  iconBg: const Color(0xFF8B5CF6).withOpacity(0.12),
+                  iconColor: const Color(0xFF8B5CF6),
+                  title: "Account Aggregator",
+                  subtitle: "Bank-verified transactions",
+                  trailingText: "Coming Soon",
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const AccountAggregatorScreen()),
+                    );
+                  },
+                ),
+              ],
+            ),
+
             const SizedBox(height: 18),
 
             // DEVELOPER (Hackathon Demo)
