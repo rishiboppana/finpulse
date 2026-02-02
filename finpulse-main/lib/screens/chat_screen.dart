@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:permission_handler/permission_handler.dart';
 import '../services/gemini_service.dart';
+import '../models/transaction.dart';
+import '../services/service_initializer.dart';
+import '../services/transaction_parser.dart';
 
 /// Full-screen Chat UI for conversational AI queries
 /// Supports text input and voice commands
@@ -179,29 +182,48 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   Future<String> _getAIResponse(String query) async {
-    // Build context with spending data
+    // 1. Fetch real context from database
+    final txService = ServiceInitializer.transactions;
+    final todaySpend = await txService.getTodaySpendingAsync();
+    final recentTxs = await txService.watchAllTransactions().first; // Get latest snapshot
+    final categories = await txService.getSpendingByCategoryAsync();
+    
+    // Sort transactions by date descending and take top 10
+    recentTxs.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    final last10Txs = recentTxs.take(10).toList();
+
+    // 2. Build context string
+    final contextBuffer = StringBuffer();
+    contextBuffer.writeln("Current Date: ${DateTime.now().toLocal()}");
+    contextBuffer.writeln("Today's Total Spending: ₹${todaySpend.toStringAsFixed(2)}");
+    
+    contextBuffer.writeln("\nSpending by Category:");
+    categories.forEach((cat, amount) {
+      contextBuffer.writeln("- $cat: ₹${amount.toStringAsFixed(2)}");
+    });
+    
+    contextBuffer.writeln("\nRecent Transactions (Last 10):");
+    for (final tx in last10Txs) {
+      contextBuffer.writeln("- ${tx.timestamp.toLocal().toString().split('.')[0]}: ${tx.merchantName ?? tx.rawMerchantId} - ₹${tx.amount.toStringAsFixed(2)} (${tx.category ?? 'Uncategorized'})");
+    }
+
+    // 3. Construct Prompt
     final prompt = '''
-You are FinPulse AI, a friendly personal finance assistant. The user is asking about their spending.
+You are FinPulse AI, a smart personal finance assistant.
+Use the following REAL user data to answer the query accurately.
 
-User query: "$query"
+CONTEXT DATA:
+${contextBuffer.toString()}
 
-Respond in a helpful, conversational way. If the query is about spending:
-- Provide specific amounts when possible
-- Give insights and suggestions
-- Use emojis sparingly for friendliness
-- Keep responses concise but informative
+User Query: "$query"
 
-If you don't have actual data, provide a helpful example response that shows what the answer would look like if you had the data.
-
-Example response format for spending queries:
-"You spent ₹3,240 on Food this week 🍔
-
-Top spending:
-• Zomato: ₹1,200 (3 orders)
-• Swiggy: ₹890 (2 orders)
-• Starbucks: ₹450 (2 visits)
-
-💡 Tip: Your food spending is 15% higher than last week. Consider setting a weekly budget!"
+Guidelines:
+- Answer based ONLY on the provided data.
+- If the answer isn't in the data, say you don't have that info yet.
+- Be concise, friendly, and helpful.
+- Use Indian Rupee symbol (₹) for currency.
+- If asked about "recent" or "last", refer to the Recent Transactions list.
+- If asked about "summary" or "breakdown", refer to Spending by Category.
 ''';
 
     try {
@@ -212,7 +234,7 @@ Top spending:
         return result;
       }
       
-      // Fallback to mock response
+      // Fallback if Gemini fails
       return await _generateChatResponse(query);
     } catch (e) {
       return _generateChatResponse(query);
