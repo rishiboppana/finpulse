@@ -89,8 +89,8 @@ class NativeDetectionService {
     result = TransactionParser.parse(rawText, source: detectionSource);
     
     if (!result.success) {
-      // Fallback to mock AI parsing for demo
-      result = GeminiService.mockParseWithAI(rawText, source: detectionSource);
+      // Fallback to real Gemini AI parsing (No more mocks!)
+      result = await GeminiService.parseWithAI(rawText, source: detectionSource);
     }
     
     if (result.success && result.transaction != null) {

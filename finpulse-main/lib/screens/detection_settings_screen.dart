@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/native_detection_service.dart';
+import '../services/gemini_service.dart';
 
 /// Settings screen for managing detection permissions
 class DetectionSettingsScreen extends StatefulWidget {
@@ -142,6 +143,20 @@ class _DetectionSettingsScreenState extends State<DetectionSettingsScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
+
+                  const SizedBox(height: 32),
+
+                  // AI Connectivity section
+                  const Text(
+                    'AI CONNECTIVITY',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12,
+                      color: muted,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
@@ -149,22 +164,64 @@ class _DetectionSettingsScreenState extends State<DetectionSettingsScreen> {
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(color: const Color(0xFFE5E7EB)),
                     ),
-                    child: const Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    child: Column(
                       children: [
-                        _PrivacyRow(
-                          icon: Icons.shield_rounded,
-                          text: 'Only monitors specific UPI apps',
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF6366F1).withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Icon(Icons.auto_awesome, color: Color(0xFF6366F1), size: 20),
+                            ),
+                            const SizedBox(width: 12),
+                            const Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Gemini API Status',
+                                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+                                  ),
+                                  Text(
+                                    'Verify your AI engine is online',
+                                    style: TextStyle(color: muted, fontSize: 12),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
-                        SizedBox(height: 12),
-                        _PrivacyRow(
-                          icon: Icons.visibility_off_rounded,
-                          text: 'No keystroke or password logging',
-                        ),
-                        SizedBox(height: 12),
-                        _PrivacyRow(
-                          icon: Icons.phone_android_rounded,
-                          text: 'All data stays on your device',
+                        const SizedBox(height: 16),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: () async {
+                              setState(() => _isLoading = true);
+                              final success = await GeminiService.instance.testConnection();
+                              if (mounted) {
+                                setState(() => _isLoading = false);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(success 
+                                      ? '✨ Gemini is online and working perfectly!' 
+                                      : '❌ Failed to connect to Gemini API. Check your key/internet.'),
+                                    backgroundColor: success ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                                  ),
+                                );
+                              }
+                            },
+                            icon: const Icon(Icons.bolt, size: 18),
+                            label: const Text('Test Connection'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF6366F1),
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                          ),
                         ),
                       ],
                     ),

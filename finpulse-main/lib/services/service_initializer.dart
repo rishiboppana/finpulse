@@ -3,6 +3,8 @@ import '../database/database.dart';
 import '../database/migration.dart';
 import 'database_transaction_service.dart';
 import 'database_merchant_service.dart';
+import 'database_account_service.dart';
+import 'data_seeding_service.dart';
 
 /// Service Initializer for FinPulse
 /// 
@@ -33,6 +35,11 @@ class ServiceInitializer {
       // 3. Initialize database-backed services
       await DatabaseTransactionService.instance.init();
       await DatabaseMerchantService.instance.init();
+      await DatabaseAccountService.instance.init();
+      
+      // 4. Seed initial data if empty
+      await DataSeedingService.seedIfEmpty();
+      
       debugPrint('ServiceInitializer: Services initialized');
 
       _isInitialized = true;
@@ -59,6 +66,9 @@ class ServiceInitializer {
 
   /// Get merchant service
   static DatabaseMerchantService get merchants => DatabaseMerchantService.instance;
+
+  /// Get account service
+  static DatabaseAccountService get accounts => DatabaseAccountService.instance;
 
   /// Close all services (call on app dispose)
   static Future<void> dispose() async {

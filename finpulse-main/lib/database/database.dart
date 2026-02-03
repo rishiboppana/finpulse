@@ -14,6 +14,7 @@ import 'daos/budget_dao.dart';
 import 'daos/insight_dao.dart';
 import 'daos/chat_dao.dart';
 import 'daos/preference_dao.dart';
+import 'daos/account_dao.dart';
 
 // Generated code
 part 'database.g.dart';
@@ -285,6 +286,7 @@ class Preferences extends Table {
     InsightDao,
     ChatDao,
     PreferenceDao,
+    AccountDao,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -326,6 +328,8 @@ class AppDatabase extends _$AppDatabase {
   ChatDao get chatDao => ChatDao(this);
   @override
   PreferenceDao get preferenceDao => PreferenceDao(this);
+  @override
+  AccountDao get accountDao => AccountDao(this);
 
   
   @override

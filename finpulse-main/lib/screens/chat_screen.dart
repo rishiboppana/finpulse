@@ -164,6 +164,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           text: response,
           isUser: false,
           timestamp: DateTime.now(),
+          isAiGenerated: !response.contains("trouble connecting"),
         ));
         _isProcessing = false;
       });
@@ -234,35 +235,12 @@ Guidelines:
         return result;
       }
       
-      // Fallback if Gemini fails
-      return await _generateChatResponse(query);
+      throw Exception('Gemini returned empty response');
     } catch (e) {
-      return _generateChatResponse(query);
+      return "I'm having trouble connecting to my Gemini AI core right now. 🛰️\n\nPlease check your internet connection or try again in a moment.";
     }
   }
 
-  Future<String> _generateChatResponse(String query) async {
-    // Simplified response generation
-    final lowerQuery = query.toLowerCase();
-    
-    if (lowerQuery.contains('food') || lowerQuery.contains('eat')) {
-      return "📊 **Food Spending This Week**\n\nYou spent ₹3,240 on Food & Drinks\n\n**Top Merchants:**\n• Zomato: ₹1,200\n• Swiggy: ₹890\n• Starbucks: ₹450\n\n💡 *Tip: That's 15% more than last week!*";
-    } else if (lowerQuery.contains('transport') || lowerQuery.contains('uber') || lowerQuery.contains('ola')) {
-      return "🚗 **Transport Spending**\n\nYou spent ₹1,850 on Transport this month\n\n**Breakdown:**\n• Uber: ₹980\n• Ola: ₹620\n• Metro: ₹250\n\n💡 *Insight: Weekday rides are 40% of your transport budget*";
-    } else if (lowerQuery.contains('biggest') || lowerQuery.contains('top') || lowerQuery.contains('most')) {
-      return "💰 **Your Biggest Expenses This Month**\n\n1. Rent: ₹15,000\n2. Groceries: ₹5,200\n3. Food Delivery: ₹4,100\n4. Shopping: ₹3,800\n5. Transport: ₹1,850\n\n📈 *Total: ₹29,950*";
-    } else if (lowerQuery.contains('trend') || lowerQuery.contains('chart') || lowerQuery.contains('graph')) {
-      return "📈 **Spending Trends**\n\nYour spending pattern this month:\n\n• Week 1: ₹7,200\n• Week 2: ₹8,500 (+18%)\n• Week 3: ₹6,900 (-19%)\n• Week 4: ₹7,350\n\n💡 *You tend to spend more mid-month. Try spreading purchases evenly!*";
-    } else if (lowerQuery.contains('budget') || lowerQuery.contains('limit') || lowerQuery.contains('set')) {
-      return "✅ **Budget Settings**\n\nI can help you set budgets! Just say:\n\n• \"Set ₹5,000 budget for Food\"\n• \"Limit Shopping to ₹3,000 this month\"\n• \"Alert me when Transport exceeds ₹2,000\"\n\nWhat would you like to set?";
-    } else if (lowerQuery.contains('hello') || lowerQuery.contains('hi') || lowerQuery.contains('hey')) {
-      return "Hey there! 👋\n\nI'm your FinPulse AI assistant. I can help you:\n\n• Track spending by category\n• Find your biggest expenses\n• Show spending trends\n• Set budgets and alerts\n\nWhat would you like to know?";
-    } else if (lowerQuery.contains('save') || lowerQuery.contains('saving')) {
-      return "💵 **Saving Opportunities**\n\nBased on your spending, here's how you could save ₹3,500/month:\n\n• 🍔 Cook 2 more meals at home: ₹1,200\n• 🚗 Use metro for short trips: ₹800\n• ☕ Reduce coffee shop visits: ₹600\n• 📦 Cancel unused subscriptions: ₹900\n\n*Small changes, big impact!*";
-    } else {
-      return "I'd be happy to help with that! 🤔\n\nHere are some things I can tell you:\n\n• \"How much did I spend on [category]?\"\n• \"What's my biggest expense?\"\n• \"Show my spending trends\"\n• \"Help me save money\"\n\nTry asking one of these!";
-    }
-  }
 
   void _scrollToBottom() {
     Future.delayed(const Duration(milliseconds: 100), () {
@@ -486,13 +464,40 @@ Guidelines:
                   ),
                 ],
               ),
-              child: Text(
-                message.text,
-                style: TextStyle(
-                  color: isUser ? Colors.white : Colors.black87,
-                  fontSize: 15,
-                  height: 1.5,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    message.text,
+                    style: TextStyle(
+                      color: isUser ? Colors.white : Colors.black87,
+                      fontSize: 15,
+                      height: 1.5,
+                    ),
+                  ),
+                  if (!isUser && message.isAiGenerated) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.auto_awesome, 
+                          size: 12, 
+                          color: const Color(0xFF6366F1).withOpacity(0.7)
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          "Powered by Gemini 2.5 Flash",
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: const Color(0xFF6366F1).withOpacity(0.7),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
               ),
             ),
           ),
@@ -574,10 +579,12 @@ class ChatMessage {
   final String text;
   final bool isUser;
   final DateTime timestamp;
+  final bool isAiGenerated;
 
   ChatMessage({
     required this.text,
     required this.isUser,
     required this.timestamp,
+    this.isAiGenerated = false,
   });
 }

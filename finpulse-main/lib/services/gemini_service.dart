@@ -8,7 +8,7 @@ import 'transaction_parser.dart';
 /// Gemini AI Service for parsing complex SMS templates.
 /// Uses Gemini 3 Flash for fast, accurate extraction when Regex fails.
 class GeminiService {
-  static const String _apiKey = 'AIzaSyCyKaSO5hp0indMCVdTYW9cuk0a02tuhfk';
+  static const String _apiKey = 'AIzaSyD5LeRh-8K7NzHJrH4EAkhelpT_s5APP9U';
   
   // Singleton instance
   static final GeminiService instance = GeminiService._();
@@ -18,7 +18,7 @@ class GeminiService {
   
   static GenerativeModel get model {
     _model ??= GenerativeModel(
-      model: 'gemini-2.0-flash',
+      model: 'gemini-2.5-flash',
       apiKey: _apiKey,
       generationConfig: GenerationConfig(
         temperature: 0.1,
@@ -34,7 +34,19 @@ class GeminiService {
       final response = await model.generateContent([Content.text(prompt)]);
       return response.text;
     } catch (e) {
+      print('Gemini generateContent error: $e');
       return null;
+    }
+  }
+
+  /// Test connectivity to Gemini API
+  Future<bool> testConnection() async {
+    try {
+      final response = await model.generateContent([Content.text('Hi')]);
+      return response.text != null && response.text!.isNotEmpty;
+    } catch (e) {
+      print('Gemini testConnection error: $e');
+      return false;
     }
   }
 
@@ -43,7 +55,7 @@ class GeminiService {
   Future<Map<String, dynamic>?> analyzeReceiptImage(List<int> imageBytes) async {
     try {
       final visionModel = GenerativeModel(
-        model: 'gemini-2.0-flash',
+        model: 'gemini-2.5-flash',
         apiKey: _apiKey,
         generationConfig: GenerationConfig(
           temperature: 0.1,

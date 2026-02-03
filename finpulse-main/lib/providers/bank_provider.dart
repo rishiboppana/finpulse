@@ -1,21 +1,32 @@
 import 'package:flutter/foundation.dart';
 
 import '../models/bank_account.dart';
-import '../services/bank_service.dart';
-import '../services/storage_service.dart';
+import '../services/database_account_service.dart';
 
 /// Bank account provider for reactive state management.
+/// Now backed by SQLite via DatabaseAccountService.
 class BankProvider extends ChangeNotifier {
-  MockBankService? _bankService;
-  final StorageService _storage;
+  final DatabaseAccountService _dbService = DatabaseAccountService.instance;
 
   List<BankAccount> _accounts = [];
   bool _isLoading = false;
   String? _errorMessage;
   bool _initialized = false;
 
-  BankProvider({StorageService? storage})
-      : _storage = storage ?? StorageService();
+  BankProvider() {
+    _dbService.addListener(_onDbUpdate);
+  }
+
+  @override
+  void dispose() {
+    _dbService.removeListener(_onDbUpdate);
+    super.dispose();
+  }
+
+  void _onDbUpdate() {
+    _accounts = _dbService.accounts;
+    notifyListeners();
+  }
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Getters
@@ -29,10 +40,11 @@ class BankProvider extends ChangeNotifier {
   /// Get primary account (or first account if none marked primary)
   BankAccount? get primaryAccount {
     if (_accounts.isEmpty) return null;
-    return _accounts.firstWhere(
-      (a) => a.isPrimary,
-      orElse: () => _accounts.first,
-    );
+    try {
+      return _accounts.firstWhere((a) => a.isPrimary);
+    } catch (_) {
+      return _accounts.first;
+    }
   }
 
   /// Get total balance across all active accounts
@@ -63,11 +75,9 @@ class BankProvider extends ChangeNotifier {
   // Initialization
   // ─────────────────────────────────────────────────────────────────────────────
 
-  /// Initialize with user ID (call after login)
-  Future<void> initialize(String oderId) async {
-    if (_initialized && _bankService != null) return;
-
-    _bankService = MockBankService(oderId: oderId, storage: _storage);
+  /// Initialize with user ID
+  Future<void> initialize(String userId) async {
+    if (_initialized) return;
     await loadAccounts();
     _initialized = true;
   }
@@ -75,7 +85,6 @@ class BankProvider extends ChangeNotifier {
   /// Reset state (call on logout)
   void reset() {
     _accounts = [];
-    _bankService = null;
     _initialized = false;
     _errorMessage = null;
     notifyListeners();
@@ -87,13 +96,12 @@ class BankProvider extends ChangeNotifier {
 
   /// Load all accounts
   Future<void> loadAccounts() async {
-    if (_bankService == null) return;
-
     _setLoading(true);
     _clearError();
 
     try {
-      _accounts = await _bankService!.getAccounts();
+      await _dbService.refresh();
+      _accounts = _dbService.accounts;
       notifyListeners();
     } catch (e) {
       _setError('Failed to load accounts');
@@ -113,15 +121,13 @@ class BankProvider extends ChangeNotifier {
     String? ifscCode,
     String? upiId,
   }) async {
-    if (_bankService == null) return false;
-
     _setLoading(true);
     _clearError();
 
     try {
       final account = BankAccount(
-        id: '', // Will be generated
-        oderId: '', // Will be set by service
+        id: 'acc_${DateTime.now().millisecondsSinceEpoch}',
+        oderId: 'current_user',
         institutionId: institutionId,
         institutionName: institutionName,
         accountName: accountName,
@@ -133,9 +139,7 @@ class BankProvider extends ChangeNotifier {
         upiId: upiId,
       );
 
-      final newAccount = await _bankService!.addAccount(account);
-      _accounts.add(newAccount);
-      notifyListeners();
+      await _dbService.addAccount(account);
       return true;
     } catch (e) {
       _setError('Failed to add account');
@@ -145,81 +149,18 @@ class BankProvider extends ChangeNotifier {
     }
   }
 
-  /// Update an existing account
+  /// Update account balance
+  Future<void> updateBalance(String id, double newBalance) async {
+    await _dbService.updateBalance(id, newBalance);
+  }
+
+  /// Update full account details
   Future<bool> updateAccount(BankAccount account) async {
-    if (_bankService == null) return false;
-
     _setLoading(true);
-    _clearError();
-
     try {
-      final updated = await _bankService!.updateAccount(account);
-      final index = _accounts.indexWhere((a) => a.id == account.id);
-      if (index != -1) {
-        _accounts[index] = updated;
-        notifyListeners();
-      }
-      return true;
-    } catch (e) {
-      _setError('Failed to update account');
-      return false;
+      return await _dbService.updateAccount(account);
     } finally {
       _setLoading(false);
-    }
-  }
-
-  /// Remove an account
-  Future<bool> removeAccount(String accountId) async {
-    if (_bankService == null) return false;
-
-    _setLoading(true);
-    _clearError();
-
-    try {
-      await _bankService!.removeAccount(accountId);
-      _accounts.removeWhere((a) => a.id == accountId);
-      notifyListeners();
-      return true;
-    } catch (e) {
-      _setError('Failed to remove account');
-      return false;
-    } finally {
-      _setLoading(false);
-    }
-  }
-
-  /// Sync account balance
-  Future<bool> syncAccount(String accountId) async {
-    if (_bankService == null) return false;
-
-    try {
-      final updated = await _bankService!.syncAccount(accountId);
-      final index = _accounts.indexWhere((a) => a.id == accountId);
-      if (index != -1) {
-        _accounts[index] = updated;
-        notifyListeners();
-      }
-      return true;
-    } catch (e) {
-      return false;
-    }
-  }
-
-  /// Set primary account
-  Future<bool> setPrimaryAccount(String accountId) async {
-    if (_bankService == null) return false;
-
-    try {
-      await _bankService!.setPrimaryAccount(accountId);
-      for (int i = 0; i < _accounts.length; i++) {
-        _accounts[i] = _accounts[i].copyWith(
-          isPrimary: _accounts[i].id == accountId,
-        );
-      }
-      notifyListeners();
-      return true;
-    } catch (e) {
-      return false;
     }
   }
 
@@ -239,10 +180,5 @@ class BankProvider extends ChangeNotifier {
 
   void _clearError() {
     _errorMessage = null;
-  }
-
-  void clearError() {
-    _clearError();
-    notifyListeners();
   }
 }

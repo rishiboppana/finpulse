@@ -427,56 +427,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
   _AccountMode accountMode = _AccountMode.debit;
   _ScopeMode scopeMode = _ScopeMode.daily;
 
-  // Real transactions from database
-  List<Transaction> _pendingTransactions = [];
-  List<Transaction> _todayTransactions = [];
-  Map<String, double> _categorySpending = {};
-  double _todaySpending = 0.0;
-  bool _isLoading = true;
+  // No longer need manual state variables as we use StreamBuilder
 
-  @override
-  void initState() {
-    super.initState();
-    _loadRealData();
-  }
-
-  Future<void> _loadRealData() async {
-    final txService = ServiceInitializer.transactions;
-    await txService.init();
-    
-    // Get uncategorized transactions (pending)
-    final uncategorized = await txService.getUncategorizedTransactions();
-    
-    // Get today's transactions
-    final todayTxs = await txService.todayTransactionsAsync; // Need to ensure this getter exists or use getTodayTransactions()
-
-    // Get today's spending
-    final todaySpend = await txService.getTodaySpendingAsync();
-    
-    // Get category breakdown
-    final categories = await txService.getSpendingByCategoryAsync();
-    
-    if (mounted) {
-      setState(() {
-        _pendingTransactions = uncategorized;
-        _todayTransactions = todayTxs;
-        _todaySpending = todaySpend;
-        _categorySpending = categories;
-        _isLoading = false;
-      });
-    }
-  }
+  // No longer need manual _loadRealData as we use StreamBuilder
 
   // Generate mini bars from real category spending
-  List<_MiniCatBar> get miniBars {
-    if (_categorySpending.isEmpty) {
+  List<_MiniCatBar> miniBars(Map<String, double> categorySpending) {
+    if (categorySpending.isEmpty) {
       return const [
         _MiniCatBar(label: "No data", value: 0.0),
       ];
     }
     
-    final maxSpend = _categorySpending.values.fold(0.0, (a, b) => a > b ? a : b);
-    return _categorySpending.entries.take(3).map((e) {
+    final maxSpend = categorySpending.values.fold(0.0, (a, b) => a > b ? a : b);
+    return categorySpending.entries.take(3).map((e) {
       return _MiniCatBar(
         label: e.key,
         value: maxSpend > 0 ? e.value / maxSpend : 0.0,
@@ -485,25 +449,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   // Insights (generated from real data)
-  List<_InsightData> get homeInsights {
+  List<_InsightData> homeInsights(List<Transaction> pendingTransactions, double todaySpending) {
     final insights = <_InsightData>[];
     
-    if (_pendingTransactions.isNotEmpty) {
+    if (pendingTransactions.isNotEmpty) {
       insights.add(_InsightData(
         icon: Icons.pending_actions_rounded,
         iconBg: const Color(0xFFFFF1E7),
         iconColor: const Color(0xFFF97316),
-        title: "${_pendingTransactions.length} transactions need categorization",
+        title: "${pendingTransactions.length} transactions need categorization",
         subtitle: "Tap to categorize them now",
       ));
     }
     
-    if (_todaySpending > 0) {
+    if (todaySpending > 0) {
       insights.add(_InsightData(
         icon: Icons.account_balance_wallet_rounded,
         iconBg: const Color(0xFFE9FFF9),
         iconColor: const Color(0xFF10B981),
-        title: "Today you've spent ₹${_todaySpending.toStringAsFixed(0)}",
+        title: "Today you've spent ₹${todaySpending.toStringAsFixed(0)}",
         subtitle: "Keep tracking to stay on budget",
       ));
     }
@@ -553,12 +517,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
               activeAccountIndex = 0;
             }
 
-            // Use real pending transactions from database
-            final visiblePending = _pendingTransactions;
+            return StreamBuilder<List<Transaction>>(
+              stream: ServiceInitializer.transactions.watchAllTransactions(),
+              builder: (context, snapshot) {
+                final allTransactions = snapshot.data ?? [];
+                
+                // Filter data for dashboard metrics
+                final now = DateTime.now();
+                final todayStart = DateTime(now.year, now.month, now.day);
+                
+                final pendingTransactions = allTransactions.where((t) => t.category == null).toList();
+                final todayTransactions = allTransactions.where((t) => t.timestamp.isAfter(todayStart)).toList();
+                final todaySpending = todayTransactions
+                    .where((t) => t.type == TransactionType.debit)
+                    .fold(0.0, (sum, t) => sum + t.amount);
+                
+                // Calculate category breakdown
+                final categorySpending = <String, double>{};
+                for (final t in allTransactions) {
+                  if (t.type == TransactionType.debit && t.category != null) {
+                    categorySpending[t.category!] = (categorySpending[t.category!] ?? 0.0) + t.amount;
+                  }
+                }
 
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                 // Top bar: avatar, title, bell
                 Row(
                   children: [
@@ -720,7 +704,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 // Right: mini bars (Mocked for now)
                                 SizedBox(
                                   width: 130,
-                                  child: _MiniCategoryBars(bars: miniBars),
+                                  child: _MiniCategoryBars(bars: miniBars(categorySpending)),
                                 ),
                               ],
                             ),
@@ -762,14 +746,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
                 const Spacer(),
                 Text(
-                  "${visiblePending.length} pending",
+                  "${pendingTransactions.length} pending",
                   style: TextStyle(color: muted, fontWeight: FontWeight.w700),
                 ),
               ],
             ),
             const SizedBox(height: 10),
 
-            if (visiblePending.isEmpty)
+            if (pendingTransactions.isEmpty)
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(16),
@@ -793,19 +777,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   padding: const EdgeInsets.all(12),
                   child: Column(
                     children: [
-                      for (int i = 0; i < (visiblePending.length > 3 ? 3 : visiblePending.length); i++)
+                      for (int i = 0; i < (pendingTransactions.length > 3 ? 3 : pendingTransactions.length); i++)
                         Padding(
                           padding: const EdgeInsets.only(bottom: 10),
                           child: _PendingDismissTile(
-                            txn: visiblePending[i],
-                            onCategorize: () => _categorizeTxn(visiblePending[i]),
-                            onSnooze: () => _snoozeTxn(visiblePending[i]),
+                            txn: pendingTransactions[i],
+                            onCategorize: () => _categorizeTxn(pendingTransactions[i]),
+                            onSnooze: () => _snoozeTxn(pendingTransactions[i]),
                           ),
                         ),
-                      if (visiblePending.length > 3)
+                      if (pendingTransactions.length > 3)
                         InkWell(
                           borderRadius: BorderRadius.circular(999),
-                          onTap: () => _showAllPending(),
+                          onTap: () => _showAllPending(pendingTransactions),
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                             decoration: BoxDecoration(
@@ -813,7 +797,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               borderRadius: BorderRadius.circular(999),
                             ),
                             child: Text(
-                              "Show ${visiblePending.length - 3} more",
+                              "Show ${pendingTransactions.length - 3} more",
                               style: TextStyle(color: teal, fontWeight: FontWeight.w900),
                             ),
                           ),
@@ -842,7 +826,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             const SizedBox(height: 10),
 
             _QuickConfirmCarousel(
-              items: visiblePending.take(5).toList(),
+              items: pendingTransactions.take(5).toList(),
               onConfirm: (txn) => _saveCategory(txn, "Groceries"),
               onEdit: (txn) => _categorizeTxn(txn), // opens rename + category sheet
             ),
@@ -882,7 +866,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
             const SizedBox(height: 8),
 
-            ...homeInsights.map((x) => Padding(
+            ...homeInsights(pendingTransactions, todaySpending).map((x) => Padding(
                   padding: const EdgeInsets.only(bottom: 12),
                   child: _InsightCard(data: x),
                 )),
@@ -898,8 +882,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
                 // Pie Chart - Category Breakdown
                 SpendingPieChart(
-                  data: ChartSampleData.getCategoryData(),
-                  total: ChartSampleData.getCategoryData().fold(0.0, (sum, item) => sum + item.amount),
+                  data: categorySpending.entries.map((e) => CategorySpend(
+                    name: e.key, 
+                    amount: e.value,
+                    color: Colors.primaries[e.key.hashCode % Colors.primaries.length],
+                    icon: Icons.category,
+                  )).toList(),
+                  total: todaySpending,
                 ),
 
                 const SizedBox(height: 16),
@@ -928,7 +917,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
             const SizedBox(height: 10),
 
-            if (_todayTransactions.isEmpty)
+            if (todayTransactions.isEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 20),
                 child: Center(
@@ -939,12 +928,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
               )
             else
-              ..._todayTransactions.take(5).map((tx) => Padding(
+              ...todayTransactions.take(5).map((tx) => Padding(
                 padding: const EdgeInsets.only(bottom: 12),
                 child: _TodayTxnRow(
                   time: "${tx.timestamp.hour > 12 ? tx.timestamp.hour - 12 : tx.timestamp.hour}:${tx.timestamp.minute.toString().padLeft(2, '0')} ${tx.timestamp.hour >= 12 ? 'PM' : 'AM'}",
                   merchant: tx.merchantName ?? tx.rawMerchantId ?? "Unknown",
-                  amount: "-\$${tx.amount.toStringAsFixed(2)}",
+                  amount: "₹${tx.amount.toStringAsFixed(2)}",
                   category: tx.category ?? "UNCATEGORIZED",
                   onFix: () {
                      _categorizeTxn(tx);
@@ -956,7 +945,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ],
         );
       },
-    ),
+    );
+  },
+),
       ),
     );
   }
@@ -980,7 +971,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
     
     await ServiceInitializer.transactions.updateTransaction(updatedTxn);
-    await _loadRealData(); // Refresh UI
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text("Saved: $newName → $category")),
@@ -992,7 +982,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     // Update transaction in database
     final updatedTxn = txn.copyWith(category: category);
     await ServiceInitializer.transactions.updateTransaction(updatedTxn);
-    await _loadRealData(); // Refresh UI
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text("Saved: ${txn.merchantName ?? 'Merchant'} → $category")),
@@ -1005,7 +994,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Future<void> _showAllPending() async {
+  Future<void> _showAllPending(List<Transaction> pending) async {
     final teal = const Color(0xFF29D6C7);
     await showModalBottomSheet(
       context: context,
@@ -1016,7 +1005,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           children: [
             const Text("All Pending", style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
             const SizedBox(height: 12),
-            for (final x in List<Transaction>.from(_pendingTransactions))
+            for (final x in pending)
               Padding(
                 padding: const EdgeInsets.only(bottom: 10),
                 child: _PendingDismissTile(
@@ -1159,7 +1148,7 @@ class _BudgetVsActualRowView extends StatelessWidget {
                 child: Align(
                   alignment: Alignment.center,
                   child: Text(
-                    "\$${row.budget.toStringAsFixed(0)}",
+                    "₹${row.budget.toStringAsFixed(0)}",
                     style: TextStyle(color: textDark, fontWeight: FontWeight.w900, fontSize: 12),
                   ),
                 ),
@@ -1195,7 +1184,7 @@ class _BudgetVsActualRowView extends StatelessWidget {
                 child: Align(
                   alignment: Alignment.center,
                   child: Text(
-                    "\$${row.actual.toStringAsFixed(0)}",
+                    "₹${row.actual.toStringAsFixed(0)}",
                     style: TextStyle(color: Colors.black, fontWeight: FontWeight.w900, fontSize: 12),
                   ),
                 ),
@@ -1358,7 +1347,7 @@ class _PendingDismissTile extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16),
         alignment: Alignment.centerRight,
         decoration: BoxDecoration(
-          color: const Color(0xFFF43F5E).withOpacity(0.10),
+          color: Color(0xFFF43F5E).withOpacity(0.10),
           borderRadius: BorderRadius.circular(18),
         ),
         child: ClipRect(
@@ -1406,8 +1395,20 @@ class _PendingDismissTile extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(txn.merchantName ?? txn.rawMerchantId ?? "Unknown Merchant", 
-                       style: TextStyle(color: textDark, fontWeight: FontWeight.w900)),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(txn.merchantName ?? txn.rawMerchantId ?? "Unknown Merchant", 
+                             style: TextStyle(color: textDark, fontWeight: FontWeight.w900),
+                             maxLines: 1,
+                             overflow: TextOverflow.ellipsis),
+                      ),
+                      if (txn.isParsedByAI) ...[
+                        const SizedBox(width: 4),
+                        const Icon(Icons.auto_awesome, size: 14, color: Color(0xFF6366F1)),
+                      ],
+                    ],
+                  ),
                   const SizedBox(height: 4),
                   Text(_formatDate(txn.timestamp), style: TextStyle(color: muted, fontWeight: FontWeight.w700)),
                 ],
@@ -1417,7 +1418,7 @@ class _PendingDismissTile extends StatelessWidget {
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Text("-\$${txn.amount.toStringAsFixed(2)}", style: TextStyle(color: textDark, fontWeight: FontWeight.w900)),
+                Text("-₹${txn.amount.toStringAsFixed(2)}", style: TextStyle(color: textDark, fontWeight: FontWeight.w900)),
                 const SizedBox(height: 8),
                 SizedBox(
                   height: 32,
@@ -1516,7 +1517,7 @@ class _QuickConfirmCarouselState extends State<_QuickConfirmCarousel> {
                             ),
                             const SizedBox(width: 10),
                             Text(
-                              "-\$${x.amount.toStringAsFixed(2)}",
+                              "-₹${x.amount.toStringAsFixed(2)}",
                               style: const TextStyle(
                                 fontWeight: FontWeight.w900,
                                 fontSize: 15,
@@ -1843,7 +1844,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
                   ),
                   child: Column(
                     children: [
-                      Icon(Icons.label_outline_rounded, color: const Color(0xFF64748B).withOpacity(0.5), size: 32),
+                      Icon(Icons.label_outline_rounded, color: Color(0xFF64748B).withOpacity(0.5), size: 32),
                       const SizedBox(height: 8),
                       const Text("No custom categories yet", style: TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
                     ],
@@ -1890,7 +1891,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            Text("\$${total.toStringAsFixed(2)}", style: TextStyle(fontWeight: FontWeight.w900, color: textDark, fontSize: 16)),
+            Text("₹${total.toStringAsFixed(2)}", style: TextStyle(fontWeight: FontWeight.w900, color: textDark, fontSize: 16)),
             const Text("This Month", style: TextStyle(fontSize: 10, color: Colors.grey)),
           ],
         ),
@@ -2083,7 +2084,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               children: [
                 _SettingsNavTile(
                   icon: Icons.receipt_long_rounded,
-                  iconBg: const Color(0xFF3B82F6).withOpacity(0.12),
+                  iconBg: Color(0xFF3B82F6).withOpacity(0.12),
                   iconColor: const Color(0xFF3B82F6),
                   title: "Scan Receipt",
                   subtitle: "Use camera to add transactions",
@@ -2096,7 +2097,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 _SettingsNavTile(
                   icon: Icons.account_balance_rounded,
-                  iconBg: const Color(0xFF8B5CF6).withOpacity(0.12),
+                  iconBg: Color(0xFF8B5CF6).withOpacity(0.12),
                   iconColor: const Color(0xFF8B5CF6),
                   title: "Account Aggregator",
                   subtitle: "Bank-verified transactions",
@@ -2120,7 +2121,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               children: [
                 _SettingsNavTile(
                   icon: Icons.science_rounded,
-                  iconBg: const Color(0xFF8B5CF6).withOpacity(0.12),
+                  iconBg: Color(0xFF8B5CF6).withOpacity(0.12),
                   iconColor: const Color(0xFF8B5CF6),
                   title: "Mock Payment Trigger",
                   subtitle: "Test AI parsing pipeline",
@@ -2133,7 +2134,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 _SettingsNavTile(
                   icon: Icons.school_rounded,
-                  iconBg: const Color(0xFF10B981).withOpacity(0.12),
+                  iconBg: Color(0xFF10B981).withOpacity(0.12),
                   iconColor: const Color(0xFF10B981),
                   title: "Learned Merchants",
                   subtitle: "View AI-learned categories",
@@ -2146,7 +2147,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 _SettingsNavTile(
                   icon: Icons.radar_rounded,
-                  iconBg: const Color(0xFFF59E0B).withOpacity(0.12),
+                  iconBg: Color(0xFFF59E0B).withOpacity(0.12),
                   iconColor: const Color(0xFFF59E0B),
                   title: "Detection Settings",
                   subtitle: "Enable real-time transaction capture",
@@ -2410,13 +2411,13 @@ class _SelectAccountScreenState extends State<SelectAccountScreen> with SingleTi
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          "spent \$${spent.toStringAsFixed(0)}",
+                          "spent ₹${spent.toStringAsFixed(0)}",
                           style: TextStyle(color: Colors.grey[600], fontWeight: FontWeight.w600),
                         ),
                         Text(
                           isExceeded 
-                            ? "Over by \$${(spent - budget.amount).toStringAsFixed(0)}"
-                            : "left \$${remaining.toStringAsFixed(0)}",
+                            ? "Over by ₹${(spent - budget.amount).toStringAsFixed(0)}"
+                            : "left ₹${remaining.toStringAsFixed(0)}",
                           style: TextStyle(
                             color: isExceeded ? Colors.red : const Color(0xFF0F172A), 
                             fontWeight: FontWeight.w900
@@ -2428,7 +2429,7 @@ class _SelectAccountScreenState extends State<SelectAccountScreen> with SingleTi
                     Align(
                       alignment: Alignment.centerRight,
                       child: Text(
-                        "of \$${budget.amount.toStringAsFixed(0)}",
+                        "of ₹${budget.amount.toStringAsFixed(0)}",
                         style: TextStyle(fontSize: 12, color: Colors.grey[400]),
                       ),
                     ),
@@ -3205,14 +3206,14 @@ class _StatsScreenState extends State<StatsScreen> with SingleTickerProviderStat
   }
 
   Future<void> _loadSpendingData() async {
-    final cats = await ServiceInitializer.transactions.getSpendingByCategoryAsync();
+    final txService = ServiceInitializer.transactions;
+    final cats = await txService.getSpendingByCategoryAsync();
+    
     // Also load spending for each budget
     final budgets = await ServiceInitializer.database.budgetDao.getAllBudgets();
     final budgetSpends = <int, double>{};
     
     for (final b in budgets) {
-      // Calculate spending for this budget's category in the current month (simplified for now)
-      // Ideally this should use BudgetDao to calculate current usage based on period
       final spent = await ServiceInitializer.database.budgetDao.getBudgetSpending(b.id, DateTime.now());
       budgetSpends[b.id] = spent;
     }
@@ -3240,20 +3241,20 @@ class _StatsScreenState extends State<StatsScreen> with SingleTickerProviderStat
       iconBg: Color(0xFFFFF1E7),
       iconColor: Color(0xFFF97316),
       title: "You spent 15% more on Coffee this week than your average.",
-      subtitle: "That’s about \$12.50 extra.",
+      subtitle: "That’s about ₹105 extra.",
     ),
     _InsightData(
       icon: Icons.check_circle_rounded,
       iconBg: Color(0xFFE9FFF9),
       iconColor: Color(0xFF10B981),
-      title: "Great job! You are \$200 under your dining budget this month.",
+      title: "Great job! You are ₹16,000 under your dining budget this month.",
       subtitle: "Keep it up to reach your savings goal.",
     ),
     _InsightData(
       icon: Icons.notifications_active_rounded,
       iconBg: Color(0xFFE8F0FF),
       iconColor: Color(0xFF3B82F6),
-      title: "Subscription Alert: Netflix increased by \$2.00 starting next cycle.",
+      title: "Subscription Alert: Netflix increased by ₹150 starting next cycle.",
       subtitle: "Detected in your recurring payments.",
     ),
   ];
@@ -3270,63 +3271,47 @@ class _StatsScreenState extends State<StatsScreen> with SingleTickerProviderStat
 
 // Mock generator (replace with backend later)
 // Generates 12 points by default for the selected rangeIndex
-List<_TimePoint> _buildSeriesFor({
-  required String mainCategory,
-  String? subCategory,
-}) {
-  final r = _effectiveRange();
+  // Real data generator
+  Future<List<_TimePoint>> _fetchRealSeriesFor({
+    required String mainCategory,
+    String? subCategory,
+  }) async {
+    final r = _effectiveRange();
+    final txService = ServiceInitializer.transactions;
+    
+    // We'll use getDailySpendingTrend if it fits, or a more custom query
+    // For now, let's fetch daily data for the range
+    final days = r.end.difference(r.start).inDays + 1;
+    final List<_TimePoint> points = [];
 
-  // Decide bucket count based on rangeIndex or selectedRange size
-  final days = r.end.difference(r.start).inDays + 1;
+    for (int i = 0; i < days; i++) {
+      final start = DateTime(r.start.year, r.start.month, r.start.day).add(Duration(days: i));
+      final end = start.add(const Duration(days: 1)).subtract(const Duration(milliseconds: 1));
+      
+      // Filter by category if needed
+      final result = await txService.getSpendingByCategoryAsync(
+        from: start,
+        to: end,
+      );
+      
+      double amount = 0.0;
+      if (mainCategory == "All") {
+        amount = result.values.fold(0.0, (sum, val) => sum + val);
+      } else {
+        // Map UI category names to database categories if they differ
+        amount = result[mainCategory] ?? 0.0;
+      }
 
-  int buckets;
-  if (selectedRange != null || selectedSingleDate != null) {
-    // if user picked range, choose “nice” buckets
-    buckets = days <= 10 ? days : (days <= 35 ? 12 : 12);
-  } else {
-    buckets = switch (rangeIndex) {
-      0 => 7,   // daily default
-      1 => 8,   // weekly-ish bars
-      2 => 12,  // monthly bars
-      _ => 12,  // yearly months
-    };
+      points.add(_TimePoint(
+        label: "${start.day}/${start.month}",
+        start: start,
+        end: end,
+        amount: amount,
+      ));
+    }
+    
+    return points;
   }
-
-  // Base values from category (fallback to All)
-  final baseValues = seriesByMainCategory[mainCategory] ?? seriesByMainCategory["All"]!;
-  // Use a repeat pattern so any bucket count works
-  double v(int i) => baseValues[i % baseValues.length];
-
-  // If subCategory is selected, shrink values a bit (mock behavior)
-  final subFactor = (subCategory == null) ? 1.0 : 0.55;
-
-  // Build buckets
-  return List.generate(buckets, (i) {
-    final start = DateTime.fromMillisecondsSinceEpoch(
-      r.start.millisecondsSinceEpoch +
-          ((r.end.millisecondsSinceEpoch - r.start.millisecondsSinceEpoch) * i ~/ buckets),
-    );
-    final end = DateTime.fromMillisecondsSinceEpoch(
-      r.start.millisecondsSinceEpoch +
-          ((r.end.millisecondsSinceEpoch - r.start.millisecondsSinceEpoch) * (i + 1) ~/ buckets) -
-          1,
-    );
-
-    final label = switch (rangeIndex) {
-      0 => "${start.day}",
-      1 => "W${i + 1}",
-      2 => "${start.month}/${start.day}",
-      _ => ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][start.month - 1],
-    };
-
-    return _TimePoint(
-      label: label,
-      start: start,
-      end: end,
-      amount: v(i) * subFactor,
-    );
-  });
-}
 
 
   double _totalSpent(List<_TimePoint> pts) => pts.fold(0.0, (a, b) => a + b.amount);
@@ -3359,7 +3344,7 @@ List<_TimePoint> _buildSeriesFor({
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    "\$${total.toStringAsFixed(2)}",
+                    "₹${total.toStringAsFixed(2)}",
                     style: TextStyle(
                       fontSize: 30,
                       fontWeight: FontWeight.w900,
@@ -3472,18 +3457,20 @@ List<_TimePoint> _buildSeriesFor({
     final muted = const Color(0xFF64748B);
     
     
-    final points = _buildSeriesFor(
-      mainCategory: selectedMainCategory,
-      subCategory: selectedSubCategory,
-    );
-    final total = _totalSpent(points);
+    return FutureBuilder<List<_TimePoint>>(
+      future: _fetchRealSeriesFor(
+        mainCategory: selectedMainCategory,
+        subCategory: selectedSubCategory,
+      ),
+      builder: (context, snapshot) {
+        final points = snapshot.data ?? [];
+        final total = _totalSpent(points);
+        final subSlices = subcatsByMainCategory[selectedMainCategory] ??
+            subcatsByMainCategory["All"]!;
+        final filteredInsights = _filterInsights(insightsData, selectedMainCategory, selectedSubCategory);
 
-    final subSlices = subcatsByMainCategory[selectedMainCategory] ??
-        subcatsByMainCategory["All"]!;
-    final filteredInsights = _filterInsights(insightsData, selectedMainCategory, selectedSubCategory);
-
-    return SafeArea(
-      child: SingleChildScrollView(
+        return SafeArea(
+          child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -3665,7 +3652,7 @@ List<_TimePoint> _buildSeriesFor({
                           ),
                           const SizedBox(height: 12),
                           Text(
-                            "\$${p.amount.toStringAsFixed(2)}",
+                            "₹${p.amount.toStringAsFixed(2)}",
                             style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 28),
                           ),
                           const SizedBox(height: 10),
@@ -3736,6 +3723,8 @@ List<_TimePoint> _buildSeriesFor({
         ),
       ),
     );
+        },
+      );
   }
 
   // --------- Labels helper based on rangeIndex ----------
@@ -4647,7 +4636,7 @@ class _DonutPainter extends CustomPainter {
     // soft glow background
     final glow = Paint()
       ..style = PaintingStyle.fill
-      ..color = const Color(0xFF29D6C7).withOpacity(0.08);
+      ..color = Color(0xFF29D6C7).withOpacity(0.08);
     canvas.drawCircle(center, radius, glow);
 
     double start = -1.5708; // -pi/2

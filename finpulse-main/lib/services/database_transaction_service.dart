@@ -126,6 +126,7 @@ class DatabaseTransactionService extends ChangeNotifier {
         merchantName: Value(transaction.merchantName),
         category: Value(transaction.category),
         isCategorized: Value(transaction.category != null),
+        isParsedByAi: Value(transaction.isParsedByAI),
         accountLastDigits: Value(transaction.accountLastDigits),
       ),
     );
@@ -155,6 +156,7 @@ class DatabaseTransactionService extends ChangeNotifier {
         rawMerchantId: Value(updated.rawMerchantId),
         normalizedMerchantId: Value(_normalizeMerchant(updated.rawMerchantId)),
         accountLastDigits: Value(updated.accountLastDigits),
+        isParsedByAi: Value(updated.isParsedByAI),
         updatedAt: Value(now),
         createdAt: Value(now),
       ),
@@ -326,6 +328,7 @@ class DatabaseTransactionService extends ChangeNotifier {
       ),
       accountLastDigits: dbTx.accountLastDigits,
       rawText: dbTx.rawText,
+      isParsedByAI: dbTx.isParsedByAi,
     );
   }
 }

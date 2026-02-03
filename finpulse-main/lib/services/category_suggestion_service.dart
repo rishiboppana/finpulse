@@ -45,8 +45,8 @@ class CategorySuggestionService {
     required String merchant,
     required String rawText,
   }) async {
+    // Attempt real Gemini first
     try {
-      // Build prompt for Gemini
       final prompt = '''
 You are a financial categorization AI. Based on the transaction below, suggest 3-4 most likely spending categories.
 
@@ -62,18 +62,20 @@ Example response: Food, Dining, Entertainment
 
 Your response:''';
 
-      // Get AI response
       final response = await GeminiService.instance.generateContent(prompt);
       
       if (response != null && response.isNotEmpty) {
-        return _parseCategories(response);
+        final suggestions = _parseCategories(response);
+        if (suggestions.isNotEmpty && suggestions != defaultCategories) {
+          return suggestions;
+        }
       }
     } catch (e) {
-      debugPrint('CategorySuggestionService error: $e');
+      debugPrint('CategorySuggestionService AI error: $e');
     }
 
-    // Return default categories on error
-    return defaultCategories;
+    // Secondary fallback: keyword matching if AI is unavailable
+    return quickSuggest(merchant);
   }
 
   /// Parse Gemini response into category list
