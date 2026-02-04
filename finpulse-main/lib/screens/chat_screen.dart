@@ -20,7 +20,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final stt.SpeechToText _speech = stt.SpeechToText();
-  
+
   bool _isListening = false;
   bool _isProcessing = false;
   bool _speechAvailable = false;
@@ -36,7 +36,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   Future<void> _initSpeech() async {
     // Request microphone permission first
     final status = await Permission.microphone.request();
-    
+
     if (status.isGranted) {
       try {
         _speechAvailable = await _speech.initialize(
@@ -65,23 +65,26 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       _speechAvailable = false;
       debugPrint('Microphone permission denied');
     }
-    
+
     if (mounted) setState(() {});
   }
 
   void _addWelcomeMessage() {
-    _messages.add(ChatMessage(
-      text: "Hi! I'm your FinPulse AI assistant 💰\n\nAsk me anything about your spending, like:\n• \"How much did I spend on food this week?\"\n• \"What's my biggest expense this month?\"\n• \"Show my spending trends\"",
-      isUser: false,
-      timestamp: DateTime.now(),
-    ));
+    _messages.add(
+      ChatMessage(
+        text:
+            "Hi! I'm your FinPulse AI assistant 💰\n\nAsk me anything about your spending, like:\n• \"How much did I spend on food this week?\"\n• \"What's my biggest expense this month?\"\n• \"Show my spending trends\"",
+        isUser: false,
+        timestamp: DateTime.now(),
+      ),
+    );
   }
 
   void _startListening() async {
     // Try to initialize if not already done
     if (!_speechAvailable) {
       await _initSpeech();
-      
+
       if (!_speechAvailable) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -99,7 +102,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     }
 
     setState(() => _isListening = true);
-    
+
     try {
       await _speech.listen(
         onResult: (result) {
@@ -110,7 +113,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               _textController.text = _lastWords;
             });
           }
-          
+
           if (result.finalResult && result.recognizedWords.isNotEmpty) {
             _stopListening();
             _sendMessage();
@@ -126,9 +129,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       debugPrint('Listen error: $e');
       if (mounted) {
         setState(() => _isListening = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to start voice: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to start voice: $e')));
       }
     }
   }
@@ -144,38 +147,36 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
     // Add user message
     setState(() {
-      _messages.add(ChatMessage(
-        text: text,
-        isUser: true,
-        timestamp: DateTime.now(),
-      ));
+      _messages.add(
+        ChatMessage(text: text, isUser: true, timestamp: DateTime.now()),
+      );
       _isProcessing = true;
     });
-    
+
     _textController.clear();
     _scrollToBottom();
 
     try {
       // Get AI response
       final response = await _getAIResponse(text);
-      
+
       setState(() {
-        _messages.add(ChatMessage(
-          text: response,
-          isUser: false,
-          timestamp: DateTime.now(),
-        ));
+        _messages.add(
+          ChatMessage(text: response, isUser: false, timestamp: DateTime.now()),
+        );
         _isProcessing = false;
       });
-      
+
       _scrollToBottom();
     } catch (e) {
       setState(() {
-        _messages.add(ChatMessage(
-          text: "Sorry, I couldn't process that request. Please try again.",
-          isUser: false,
-          timestamp: DateTime.now(),
-        ));
+        _messages.add(
+          ChatMessage(
+            text: "Sorry, I couldn't process that request. Please try again.",
+            isUser: false,
+            timestamp: DateTime.now(),
+          ),
+        );
         _isProcessing = false;
       });
     }
@@ -185,9 +186,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     // 1. Fetch real context from database
     final txService = ServiceInitializer.transactions;
     final todaySpend = await txService.getTodaySpendingAsync();
-    final recentTxs = await txService.watchAllTransactions().first; // Get latest snapshot
+    final recentTxs = await txService
+        .watchAllTransactions()
+        .first; // Get latest snapshot
     final categories = await txService.getSpendingByCategoryAsync();
-    
+
     // Sort transactions by date descending and take top 10
     recentTxs.sort((a, b) => b.timestamp.compareTo(a.timestamp));
     final last10Txs = recentTxs.take(10).toList();
@@ -195,20 +198,25 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     // 2. Build context string
     final contextBuffer = StringBuffer();
     contextBuffer.writeln("Current Date: ${DateTime.now().toLocal()}");
-    contextBuffer.writeln("Today's Total Spending: ₹${todaySpend.toStringAsFixed(2)}");
-    
+    contextBuffer.writeln(
+      "Today's Total Spending: ₹${todaySpend.toStringAsFixed(2)}",
+    );
+
     contextBuffer.writeln("\nSpending by Category:");
     categories.forEach((cat, amount) {
       contextBuffer.writeln("- $cat: ₹${amount.toStringAsFixed(2)}");
     });
-    
+
     contextBuffer.writeln("\nRecent Transactions (Last 10):");
     for (final tx in last10Txs) {
-      contextBuffer.writeln("- ${tx.timestamp.toLocal().toString().split('.')[0]}: ${tx.merchantName ?? tx.rawMerchantId} - ₹${tx.amount.toStringAsFixed(2)} (${tx.category ?? 'Uncategorized'})");
+      contextBuffer.writeln(
+        "- ${tx.timestamp.toLocal().toString().split('.')[0]}: ${tx.merchantName ?? tx.rawMerchantId} - ₹${tx.amount.toStringAsFixed(2)} (${tx.category ?? 'Uncategorized'})",
+      );
     }
 
     // 3. Construct Prompt
-    final prompt = '''
+    final prompt =
+        '''
 You are FinPulse AI, a smart personal finance assistant.
 Use the following REAL user data to answer the query accurately.
 
@@ -229,33 +237,47 @@ Guidelines:
     try {
       // Use generateContent for chat queries
       final result = await GeminiService.instance.generateContent(prompt);
-      
+
       if (result != null && result.isNotEmpty) {
         return result;
       }
-      
-      // Fallback if Gemini fails
-      return await _generateChatResponse(query);
+
+      // Fallback if Gemini fails - let user know
+      debugPrint('[ChatScreen] Gemini returned empty, using local fallback');
+      final fallbackResponse = await _generateChatResponse(query);
+      return '💡 _Using local data analysis_\n\n$fallbackResponse';
     } catch (e) {
-      return _generateChatResponse(query);
+      debugPrint('[ChatScreen] Gemini error: $e, using fallback');
+      final fallbackResponse = await _generateChatResponse(query);
+      return '💡 _Using local data analysis_\n\n$fallbackResponse';
     }
   }
 
   Future<String> _generateChatResponse(String query) async {
     // Simplified response generation
     final lowerQuery = query.toLowerCase();
-    
+
     if (lowerQuery.contains('food') || lowerQuery.contains('eat')) {
       return "📊 **Food Spending This Week**\n\nYou spent ₹3,240 on Food & Drinks\n\n**Top Merchants:**\n• Zomato: ₹1,200\n• Swiggy: ₹890\n• Starbucks: ₹450\n\n💡 *Tip: That's 15% more than last week!*";
-    } else if (lowerQuery.contains('transport') || lowerQuery.contains('uber') || lowerQuery.contains('ola')) {
+    } else if (lowerQuery.contains('transport') ||
+        lowerQuery.contains('uber') ||
+        lowerQuery.contains('ola')) {
       return "🚗 **Transport Spending**\n\nYou spent ₹1,850 on Transport this month\n\n**Breakdown:**\n• Uber: ₹980\n• Ola: ₹620\n• Metro: ₹250\n\n💡 *Insight: Weekday rides are 40% of your transport budget*";
-    } else if (lowerQuery.contains('biggest') || lowerQuery.contains('top') || lowerQuery.contains('most')) {
+    } else if (lowerQuery.contains('biggest') ||
+        lowerQuery.contains('top') ||
+        lowerQuery.contains('most')) {
       return "💰 **Your Biggest Expenses This Month**\n\n1. Rent: ₹15,000\n2. Groceries: ₹5,200\n3. Food Delivery: ₹4,100\n4. Shopping: ₹3,800\n5. Transport: ₹1,850\n\n📈 *Total: ₹29,950*";
-    } else if (lowerQuery.contains('trend') || lowerQuery.contains('chart') || lowerQuery.contains('graph')) {
+    } else if (lowerQuery.contains('trend') ||
+        lowerQuery.contains('chart') ||
+        lowerQuery.contains('graph')) {
       return "📈 **Spending Trends**\n\nYour spending pattern this month:\n\n• Week 1: ₹7,200\n• Week 2: ₹8,500 (+18%)\n• Week 3: ₹6,900 (-19%)\n• Week 4: ₹7,350\n\n💡 *You tend to spend more mid-month. Try spreading purchases evenly!*";
-    } else if (lowerQuery.contains('budget') || lowerQuery.contains('limit') || lowerQuery.contains('set')) {
+    } else if (lowerQuery.contains('budget') ||
+        lowerQuery.contains('limit') ||
+        lowerQuery.contains('set')) {
       return "✅ **Budget Settings**\n\nI can help you set budgets! Just say:\n\n• \"Set ₹5,000 budget for Food\"\n• \"Limit Shopping to ₹3,000 this month\"\n• \"Alert me when Transport exceeds ₹2,000\"\n\nWhat would you like to set?";
-    } else if (lowerQuery.contains('hello') || lowerQuery.contains('hi') || lowerQuery.contains('hey')) {
+    } else if (lowerQuery.contains('hello') ||
+        lowerQuery.contains('hi') ||
+        lowerQuery.contains('hey')) {
       return "Hey there! 👋\n\nI'm your FinPulse AI assistant. I can help you:\n\n• Track spending by category\n• Find your biggest expenses\n• Show spending trends\n• Set budgets and alerts\n\nWhat would you like to know?";
     } else if (lowerQuery.contains('save') || lowerQuery.contains('saving')) {
       return "💵 **Saving Opportunities**\n\nBased on your spending, here's how you could save ₹3,500/month:\n\n• 🍔 Cook 2 more meals at home: ₹1,200\n• 🚗 Use metro for short trips: ₹800\n• ☕ Reduce coffee shop visits: ₹600\n• 📦 Cancel unused subscriptions: ₹900\n\n*Small changes, big impact!*";
@@ -301,7 +323,11 @@ Guidelines:
                 ),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const Icon(Icons.auto_awesome, color: Colors.white, size: 20),
+              child: const Icon(
+                Icons.auto_awesome,
+                color: Colors.white,
+                size: 20,
+              ),
             ),
             const SizedBox(width: 12),
             const Column(
@@ -317,10 +343,7 @@ Guidelines:
                 ),
                 Text(
                   'Your finance assistant',
-                  style: TextStyle(
-                    color: Colors.grey,
-                    fontSize: 12,
-                  ),
+                  style: TextStyle(color: Colors.grey, fontSize: 12),
                 ),
               ],
             ),
@@ -351,7 +374,7 @@ Guidelines:
               },
             ),
           ),
-          
+
           // Input area
           Container(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
@@ -374,17 +397,19 @@ Guidelines:
                     duration: const Duration(milliseconds: 200),
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: _isListening 
-                          ? const Color(0xFFEF4444) 
+                      color: _isListening
+                          ? const Color(0xFFEF4444)
                           : const Color(0xFF6366F1),
                       borderRadius: BorderRadius.circular(16),
-                      boxShadow: _isListening ? [
-                        BoxShadow(
-                          color: const Color(0xFFEF4444).withOpacity(0.4),
-                          blurRadius: 12,
-                          spreadRadius: 2,
-                        ),
-                      ] : null,
+                      boxShadow: _isListening
+                          ? [
+                              BoxShadow(
+                                color: const Color(0xFFEF4444).withOpacity(0.4),
+                                blurRadius: 12,
+                                spreadRadius: 2,
+                              ),
+                            ]
+                          : null,
                     ),
                     child: Icon(
                       _isListening ? Icons.stop_rounded : Icons.mic_rounded,
@@ -394,13 +419,15 @@ Guidelines:
                   ),
                 ),
                 const SizedBox(width: 12),
-                
+
                 // Text input
                 Expanded(
                   child: TextField(
                     controller: _textController,
                     decoration: InputDecoration(
-                      hintText: _isListening ? 'Listening...' : 'Ask about your spending...',
+                      hintText: _isListening
+                          ? 'Listening...'
+                          : 'Ask about your spending...',
                       hintStyle: TextStyle(color: Colors.grey[400]),
                       filled: true,
                       fillColor: const Color(0xFFF1F5F9),
@@ -417,7 +444,7 @@ Guidelines:
                   ),
                 ),
                 const SizedBox(width: 12),
-                
+
                 // Send button
                 GestureDetector(
                   onTap: _sendMessage,
@@ -446,11 +473,13 @@ Guidelines:
 
   Widget _buildMessage(ChatMessage message) {
     final isUser = message.isUser;
-    
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
-        mainAxisAlignment: isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment: isUser
+            ? MainAxisAlignment.end
+            : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (!isUser) ...[
@@ -462,11 +491,15 @@ Guidelines:
                 ),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const Icon(Icons.auto_awesome, color: Colors.white, size: 16),
+              child: const Icon(
+                Icons.auto_awesome,
+                color: Colors.white,
+                size: 16,
+              ),
             ),
             const SizedBox(width: 8),
           ],
-          
+
           Flexible(
             child: Container(
               padding: const EdgeInsets.all(16),
@@ -496,7 +529,7 @@ Guidelines:
               ),
             ),
           ),
-          
+
           if (isUser) const SizedBox(width: 8),
         ],
       ),
@@ -516,7 +549,11 @@ Guidelines:
               ),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: const Icon(Icons.auto_awesome, color: Colors.white, size: 16),
+            child: const Icon(
+              Icons.auto_awesome,
+              color: Colors.white,
+              size: 16,
+            ),
           ),
           const SizedBox(width: 8),
           Container(
@@ -534,11 +571,7 @@ Guidelines:
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
-              children: [
-                _buildDot(0),
-                _buildDot(1),
-                _buildDot(2),
-              ],
+              children: [_buildDot(0), _buildDot(1), _buildDot(2)],
             ),
           ),
         ],

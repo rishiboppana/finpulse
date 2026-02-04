@@ -1,16 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:drift/drift.dart';
 
 import '../models/transaction.dart';
+import '../database/database.dart';
 import 'merchant_learning_service.dart';
+import 'app_logger.dart';
 
 /// Notification Service for FinPulse.
 /// Handles the "Golden Window" notification flow.
-/// 
+///
 /// Note: This is a UI-based notification system using in-app overlays.
 /// For system-level notifications, add flutter_local_notifications package.
 class NotificationService {
   static NotificationService? _instance;
-  
+
   final List<PendingNotification> _pendingNotifications = [];
   final List<VoidCallback> _listeners = [];
 
@@ -22,7 +25,7 @@ class NotificationService {
   NotificationService._();
 
   /// Get all pending notifications
-  List<PendingNotification> get pendingNotifications => 
+  List<PendingNotification> get pendingNotifications =>
       List.unmodifiable(_pendingNotifications);
 
   /// Add a listener for notification changes
@@ -45,7 +48,7 @@ class NotificationService {
   void triggerGoldenWindow(Transaction transaction) {
     // Check if we already know this merchant
     final learning = MerchantLearningService.instance;
-    final existingMapping = transaction.rawMerchantId != null 
+    final existingMapping = transaction.rawMerchantId != null
         ? learning.getMapping(transaction.rawMerchantId!)
         : null;
 
@@ -66,12 +69,20 @@ class NotificationService {
     required String notificationId,
     required String category,
     String? friendlyName,
+    String? inputMethod, // 'tap', 'voice', 'text'
+    String? rawInput, // What user typed/spoke
   }) async {
-    final index = _pendingNotifications.indexWhere((n) => n.id == notificationId);
+    final index = _pendingNotifications.indexWhere(
+      (n) => n.id == notificationId,
+    );
     if (index == -1) return;
 
     final notification = _pendingNotifications[index];
     final transaction = notification.transaction;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final responseTimeMs = DateTime.now()
+        .difference(notification.createdAt)
+        .inMilliseconds;
 
     // Learn the merchant mapping
     if (transaction.rawMerchantId != null) {
@@ -80,6 +91,46 @@ class NotificationService {
         category: category,
         friendlyName: friendlyName,
       );
+    }
+
+    // Record user response for Gemini learning
+    try {
+      final db = AppDatabase.instance;
+      final userCorrection =
+          notification.suggestedCategory != null &&
+              notification.suggestedCategory != category
+          ? category
+          : null;
+
+      await db.userResponseDao.insertResponse(
+        UserResponsesCompanion.insert(
+          transactionId: transaction.id,
+          inputMethod: inputMethod ?? 'tap',
+          finalCategory: category,
+          createdAt: now,
+          aiSuggestions: Value(notification.suggestedCategory),
+          rawInput: Value(rawInput),
+          userConfirmed: Value(userCorrection == null),
+          userCorrection: Value(userCorrection),
+          merchantAtTime: Value(transaction.rawMerchantId),
+          amountAtTime: Value(transaction.amount),
+          responseTimeMs: Value(responseTimeMs),
+          confirmedAt: Value(now),
+        ),
+      );
+
+      // Log feedback loop interaction
+      AppLogger.instance.logUserCategorySelection(
+        transactionId: transaction.id,
+        selectedCategory: category,
+        suggestedCategory: notification.suggestedCategory,
+        inputMethod: inputMethod ?? 'tap',
+        responseTimeMs: responseTimeMs,
+      );
+
+      debugPrint('[NotificationService] Recorded user response for learning');
+    } catch (e) {
+      debugPrint('[NotificationService] Failed to record user response: $e');
     }
 
     // Mark as handled
@@ -99,7 +150,9 @@ class NotificationService {
 
   /// Snooze a notification for later
   void snooze(String notificationId) {
-    final index = _pendingNotifications.indexWhere((n) => n.id == notificationId);
+    final index = _pendingNotifications.indexWhere(
+      (n) => n.id == notificationId,
+    );
     if (index == -1) return;
 
     _pendingNotifications[index] = _pendingNotifications[index].copyWith(
@@ -116,7 +169,7 @@ class NotificationService {
   }
 
   /// Get count of unhandled notifications
-  int get unhandledCount => 
+  int get unhandledCount =>
       _pendingNotifications.where((n) => !n.isHandled && !n.isSnoozed).length;
 }
 
@@ -143,7 +196,7 @@ class PendingNotification {
   });
 
   /// Check if notification is currently snoozed
-  bool get isSnoozed => 
+  bool get isSnoozed =>
       snoozedUntil != null && DateTime.now().isBefore(snoozedUntil!);
 
   /// Time since notification was created
@@ -193,9 +246,7 @@ class ExpenseCategories {
   /// Get category by name
   static CategoryItem? getByName(String name) {
     try {
-      return all.firstWhere(
-        (c) => c.name.toLowerCase() == name.toLowerCase(),
-      );
+      return all.firstWhere((c) => c.name.toLowerCase() == name.toLowerCase());
     } catch (_) {
       return null;
     }

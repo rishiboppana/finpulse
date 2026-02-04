@@ -56,6 +56,10 @@ dependencies:
   
   # For de-duplication fingerprinting
   crypto: ^3.0.3
+  
+  # For Excel file parsing (bank statements)
+  excel: ^4.0.3
+  file_picker: ^8.0.0+1
 
 dev_dependencies:
   flutter_test:

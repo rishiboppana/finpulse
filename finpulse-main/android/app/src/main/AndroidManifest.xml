@@ -1,5 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     
+    <!-- Network Permission for Gemini AI API -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    
     <!-- Permissions for Transaction Detection -->
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
     <uses-permission android:name="android.permission.READ_SMS" />

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../services/native_detection_service.dart';
 
@@ -7,31 +8,71 @@ class DetectionSettingsScreen extends StatefulWidget {
   const DetectionSettingsScreen({super.key});
 
   @override
-  State<DetectionSettingsScreen> createState() => _DetectionSettingsScreenState();
+  State<DetectionSettingsScreen> createState() =>
+      _DetectionSettingsScreenState();
 }
 
-class _DetectionSettingsScreenState extends State<DetectionSettingsScreen> {
+class _DetectionSettingsScreenState extends State<DetectionSettingsScreen>
+    with WidgetsBindingObserver {
+  bool _smsPermissionGranted = false;
   bool _notificationListenerEnabled = false;
   bool _accessibilityEnabled = false;
   bool _isLoading = true;
 
+  static const permissionChannel = MethodChannel('com.finpulse/permissions');
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadStatus();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Refresh permission status when app returns to foreground
+    if (state == AppLifecycleState.resumed) {
+      _loadStatus();
+    }
   }
 
   Future<void> _loadStatus() async {
     setState(() => _isLoading = true);
-    
+
     final status = await NativeDetectionService.instance.getServiceStatus();
-    
+
+    // Also check SMS permission
+    bool smsGranted = false;
+    try {
+      smsGranted =
+          await permissionChannel.invokeMethod('isSmsPermissionGranted') ==
+          true;
+    } catch (e) {
+      debugPrint('SMS permission check error: $e');
+    }
+
     if (mounted) {
       setState(() {
+        _smsPermissionGranted = smsGranted;
         _notificationListenerEnabled = status['notificationListener'] ?? false;
         _accessibilityEnabled = status['accessibility'] ?? false;
         _isLoading = false;
       });
+    }
+  }
+
+  Future<void> _requestSmsPermission() async {
+    try {
+      await permissionChannel.invokeMethod('requestSmsPermission');
+      _loadStatus();
+    } catch (e) {
+      debugPrint('SMS permission request error: $e');
     }
   }
 
@@ -96,18 +137,31 @@ class _DetectionSettingsScreenState extends State<DetectionSettingsScreen> {
 
                   const SizedBox(height: 24),
 
+                  // SMS Permission
+                  _PermissionCard(
+                    icon: Icons.sms_rounded,
+                    iconColor: const Color(0xFF10B981),
+                    title: 'SMS Access',
+                    subtitle:
+                        'Read bank transaction SMS messages automatically',
+                    isEnabled: _smsPermissionGranted,
+                    onTap: () => _requestSmsPermission(),
+                  ),
+
+                  const SizedBox(height: 16),
+
                   // Notification Listener
                   _PermissionCard(
                     icon: Icons.notifications_active_rounded,
                     iconColor: const Color(0xFF6366F1),
                     title: 'Notification Access',
-                    subtitle: 'Capture payment notifications from PhonePe, GPay, Paytm',
+                    subtitle:
+                        'Capture payment notifications from PhonePe, GPay, Paytm',
                     isEnabled: _notificationListenerEnabled,
                     onTap: () async {
-                      await NativeDetectionService.instance.openNotificationListenerSettings();
-                      // Refresh status after returning
-                      await Future.delayed(const Duration(seconds: 1));
-                      _loadStatus();
+                      await NativeDetectionService.instance
+                          .openNotificationListenerSettings();
+                      // Status will auto-refresh on resume
                     },
                   ),
 
@@ -120,12 +174,12 @@ class _DetectionSettingsScreenState extends State<DetectionSettingsScreen> {
                     title: 'Accessibility Service',
                     subtitle: 'Instant detection on payment success screens',
                     isEnabled: _accessibilityEnabled,
-                    privacyNote: 'Only monitors PhonePe & GPay. No keystrokes logged.',
+                    privacyNote:
+                        'Monitors PhonePe, GPay, Paytm, BHIM & CRED only. No keystrokes logged.',
                     onTap: () async {
-                      await NativeDetectionService.instance.openAccessibilitySettings();
-                      // Refresh status after returning
-                      await Future.delayed(const Duration(seconds: 1));
-                      _loadStatus();
+                      await NativeDetectionService.instance
+                          .openAccessibilitySettings();
+                      // Status will auto-refresh on resume
                     },
                   ),
 
@@ -244,9 +298,14 @@ class _PermissionCard extends StatelessWidget {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 5,
+                ),
                 decoration: BoxDecoration(
-                  color: isEnabled ? green.withOpacity(0.1) : red.withOpacity(0.1),
+                  color: isEnabled
+                      ? green.withOpacity(0.1)
+                      : red.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Row(
@@ -281,7 +340,11 @@ class _PermissionCard extends StatelessWidget {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.privacy_tip_rounded, size: 16, color: Color(0xFFD97706)),
+                  const Icon(
+                    Icons.privacy_tip_rounded,
+                    size: 16,
+                    color: Color(0xFFD97706),
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(

@@ -1,21 +1,24 @@
 import 'dart:convert';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 
 import '../models/transaction.dart';
+import '../database/database.dart';
 import 'transaction_parser.dart';
+import 'app_logger.dart';
 
 /// Gemini AI Service for parsing complex SMS templates.
 /// Uses Gemini 3 Flash for fast, accurate extraction when Regex fails.
 class GeminiService {
   static const String _apiKey = 'AIzaSyCyKaSO5hp0indMCVdTYW9cuk0a02tuhfk';
-  
+
   // Singleton instance
   static final GeminiService instance = GeminiService._();
   GeminiService._();
-  
+
   static GenerativeModel? _model;
-  
+
   static GenerativeModel get model {
     _model ??= GenerativeModel(
       model: 'gemini-2.0-flash',
@@ -28,19 +31,55 @@ class GeminiService {
     return _model!;
   }
 
-  /// Generate text content using Gemini
-  Future<String?> generateContent(String prompt) async {
-    try {
-      final response = await model.generateContent([Content.text(prompt)]);
-      return response.text;
-    } catch (e) {
-      return null;
+  /// Generate text content using Gemini with retry logic
+  Future<String?> generateContent(String prompt, {int maxRetries = 2}) async {
+    final logger = AppLogger.instance;
+    final stopwatch = Stopwatch()..start();
+
+    logger.logGeminiRequest(
+      operation: 'generateContent',
+      promptPreview: prompt,
+    );
+
+    for (int attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        final response = await model.generateContent([Content.text(prompt)]);
+        stopwatch.stop();
+
+        logger.logGeminiResponse(
+          operation: 'generateContent',
+          success: true,
+          responsePreview: response.text,
+          latencyMs: stopwatch.elapsedMilliseconds,
+        );
+
+        return response.text;
+      } catch (e) {
+        debugPrint('[GeminiService] Attempt ${attempt + 1} failed: $e');
+        if (attempt < maxRetries) {
+          // Exponential backoff: 500ms, 1000ms, 2000ms...
+          await Future.delayed(Duration(milliseconds: 500 * (attempt + 1)));
+        }
+      }
     }
+
+    stopwatch.stop();
+    logger.logGeminiResponse(
+      operation: 'generateContent',
+      success: false,
+      latencyMs: stopwatch.elapsedMilliseconds,
+      errorMessage: 'All retry attempts failed',
+    );
+
+    debugPrint('[GeminiService] All retry attempts failed');
+    return null;
   }
 
   /// Analyze a receipt image using Gemini Vision
   /// Returns parsed receipt data in JSON format
-  Future<Map<String, dynamic>?> analyzeReceiptImage(List<int> imageBytes) async {
+  Future<Map<String, dynamic>?> analyzeReceiptImage(
+    List<int> imageBytes,
+  ) async {
     try {
       final visionModel = GenerativeModel(
         model: 'gemini-2.0-flash',
@@ -82,8 +121,8 @@ Respond ONLY with valid JSON in this exact format:
       final response = await visionModel.generateContent([
         Content.multi([
           TextPart(prompt),
-          DataPart('image/jpeg', imageBytes as Uint8List),
-        ])
+          DataPart('image/jpeg', Uint8List.fromList(imageBytes)),
+        ]),
       ]);
 
       final text = response.text;
@@ -100,13 +139,16 @@ Respond ONLY with valid JSON in this exact format:
       }
       return null;
     } catch (e) {
-      print('Error analyzing receipt: $e');
+      debugPrint('[GeminiService] Error analyzing receipt: $e');
       return null;
     }
   }
 
   /// Parse SMS with AI (wrapper for static method)
-  Future<ParseResult> parseSmsWithAI(String rawText, DetectionSource source) async {
+  Future<ParseResult> parseSmsWithAI(
+    String rawText,
+    DetectionSource source,
+  ) async {
     return GeminiService.parseWithAI(rawText, source: source);
   }
 
@@ -121,9 +163,43 @@ Respond ONLY with valid JSON in this exact format:
       return regexResult;
     }
 
-    // If regex failed, use Gemini
+    // If regex failed, use Gemini with learning context
     try {
-      final prompt = '''
+      // Fetch user's past corrections for this merchant (if available)
+      String learningContext = '';
+      try {
+        final db = AppDatabase.instance;
+        // Extract potential merchant from raw text
+        final merchantMatch = RegExp(
+          r'(?:to|at|@)\s+([A-Za-z0-9_\-]+)',
+          caseSensitive: false,
+        ).firstMatch(rawText);
+        final merchantId = merchantMatch?.group(1);
+
+        if (merchantId != null) {
+          final context = await db.userResponseDao.buildLearningContext(
+            merchantId,
+          );
+          if (context.isNotEmpty) {
+            final merchantHistory =
+                context['merchant_history'] as Map<String, dynamic>?;
+            if (merchantHistory != null &&
+                merchantHistory['most_common'] != null) {
+              learningContext =
+                  '''
+USER HISTORY:
+- This merchant was previously categorized as: ${merchantHistory['most_common']}
+- Times seen: ${merchantHistory['times_seen']}
+''';
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('[GeminiService] Could not fetch learning context: $e');
+      }
+
+      final prompt =
+          '''
 You are a financial SMS parser for Indian bank transactions. Extract the following from this SMS:
 1. amount (number only, no currency symbol)
 2. date (ISO format: YYYY-MM-DD)
@@ -132,6 +208,7 @@ You are a financial SMS parser for Indian bank transactions. Extract the followi
 5. merchant_id (raw merchant name/UPI VPA)
 6. type (debit or credit)
 
+$learningContext
 SMS Text: "$rawText"
 
 Respond ONLY with valid JSON in this exact format:
@@ -160,7 +237,7 @@ If you cannot extract a field, use null. Always return valid JSON.
         }
 
         final parsed = jsonDecode(jsonStr) as Map<String, dynamic>;
-        
+
         DateTime? timestamp;
         if (parsed['date'] != null) {
           final dateStr = parsed['date'] as String;
@@ -174,8 +251,8 @@ If you cannot extract a field, use null. Always return valid JSON.
           timestamp: timestamp ?? DateTime.now(),
           accountLastDigits: parsed['account_last_digits'] as String?,
           rawMerchantId: parsed['merchant_id'] as String?,
-          type: parsed['type'] == 'credit' 
-              ? TransactionType.credit 
+          type: parsed['type'] == 'credit'
+              ? TransactionType.credit
               : TransactionType.debit,
           source: source,
           rawText: rawText,
@@ -208,8 +285,10 @@ If you cannot extract a field, use null. Always return valid JSON.
 
     // Simulate AI parsing for demo
     // Extract any number that looks like an amount
-    final amountMatch = RegExp(r'(\d+(?:,\d+)*(?:\.\d{1,2})?)').firstMatch(rawText);
-    final amount = amountMatch != null 
+    final amountMatch = RegExp(
+      r'(\d+(?:,\d+)*(?:\.\d{1,2})?)',
+    ).firstMatch(rawText);
+    final amount = amountMatch != null
         ? double.tryParse(amountMatch.group(1)!.replaceAll(',', '')) ?? 100.0
         : 100.0;
 

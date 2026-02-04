@@ -13,16 +13,18 @@ class OnboardingScreen extends StatefulWidget {
   State<OnboardingScreen> createState() => _OnboardingScreenState();
 }
 
-class _OnboardingScreenState extends State<OnboardingScreen> {
+class _OnboardingScreenState extends State<OnboardingScreen> with WidgetsBindingObserver {
   final PageController _pageController = PageController();
   int _currentPage = 0;
   
   // Permission states
   bool _smsPermissionGranted = false;
   bool _notificationPermissionGranted = false;
+  bool _notificationListenerEnabled = false;
   bool _accessibilityEnabled = false;
 
   static const platform = MethodChannel('com.finpulse/permissions');
+  static const detectionChannel = MethodChannel('com.finpulse/transaction_detection');
 
   final List<OnboardingPage> _pages = [
     OnboardingPage(
@@ -63,9 +65,45 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _refreshAllPermissions();
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _pageController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Refresh permission status when app returns to foreground
+    if (state == AppLifecycleState.resumed) {
+      _refreshAllPermissions();
+    }
+  }
+
+  Future<void> _refreshAllPermissions() async {
+    try {
+      final sms = await platform.invokeMethod('isSmsPermissionGranted');
+      final notif = await platform.invokeMethod('isNotificationPermissionGranted');
+      final notifListener = await detectionChannel.invokeMethod('isNotificationListenerEnabled');
+      final accessibility = await platform.invokeMethod('isAccessibilityEnabled');
+      
+      if (mounted) {
+        setState(() {
+          _smsPermissionGranted = sms == true;
+          _notificationPermissionGranted = notif == true;
+          _notificationListenerEnabled = notifListener == true;
+          _accessibilityEnabled = accessibility == true;
+        });
+      }
+    } on PlatformException catch (e) {
+      debugPrint('Permission refresh error: $e');
+    }
   }
 
   Future<void> _requestPermission(PermissionType type) async {
@@ -76,15 +114,15 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           setState(() => _smsPermissionGranted = result == true);
           break;
         case PermissionType.notification:
+          // First request POST_NOTIFICATIONS permission
           final result = await platform.invokeMethod('requestNotificationPermission');
           setState(() => _notificationPermissionGranted = result == true);
+          // Then open Notification Listener settings (for reading other apps' notifications)
+          await detectionChannel.invokeMethod('openNotificationListenerSettings');
           break;
         case PermissionType.accessibility:
           await platform.invokeMethod('openAccessibilitySettings');
-          // Check after a delay (user might enable it)
-          await Future.delayed(const Duration(seconds: 2));
-          final enabled = await platform.invokeMethod('isAccessibilityEnabled');
-          setState(() => _accessibilityEnabled = enabled == true);
+          // Status will auto-refresh when app resumes via didChangeAppLifecycleState
           break;
       }
     } on PlatformException catch (e) {
@@ -98,7 +136,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       case PermissionType.sms:
         return _smsPermissionGranted;
       case PermissionType.notification:
-        return _notificationPermissionGranted;
+        // Both POST_NOTIFICATIONS and Notification Listener should be enabled
+        return _notificationPermissionGranted && _notificationListenerEnabled;
       case PermissionType.accessibility:
         return _accessibilityEnabled;
     }

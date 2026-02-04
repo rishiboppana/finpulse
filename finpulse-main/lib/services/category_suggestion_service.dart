@@ -1,9 +1,11 @@
 import 'package:flutter/foundation.dart';
 import 'gemini_service.dart';
+import '../database/database.dart';
 
 /// Service that uses Gemini AI to suggest categories for transactions
 class CategorySuggestionService {
-  static final CategorySuggestionService instance = CategorySuggestionService._();
+  static final CategorySuggestionService instance =
+      CategorySuggestionService._();
   CategorySuggestionService._();
 
   /// Default categories used as fallback
@@ -46,10 +48,40 @@ class CategorySuggestionService {
     required String rawText,
   }) async {
     try {
-      // Build prompt for Gemini
-      final prompt = '''
+      // Fetch user's past categorization history for this merchant
+      String learningContext = '';
+      try {
+        final db = AppDatabase.instance;
+        final context = await db.userResponseDao.buildLearningContext(merchant);
+        if (context.isNotEmpty) {
+          final merchantHistory =
+              context['merchant_history'] as Map<String, dynamic>?;
+          final phrasePatterns =
+              context['phrase_patterns'] as Map<String, dynamic>?;
+
+          if (merchantHistory != null &&
+              merchantHistory['most_common'] != null) {
+            learningContext +=
+                'USER HISTORY: This merchant was categorized as "${merchantHistory['most_common']}" ${merchantHistory['times_seen']} times before.\n';
+          }
+
+          if (phrasePatterns != null && phrasePatterns.isNotEmpty) {
+            learningContext +=
+                'USER PREFERENCES: ${phrasePatterns.keys.take(3).join(", ")} are commonly used categories.\n';
+          }
+        }
+      } catch (e) {
+        debugPrint(
+          '[CategorySuggestionService] Could not fetch learning context: $e',
+        );
+      }
+
+      // Build prompt for Gemini with learning context
+      final prompt =
+          '''
 You are a financial categorization AI. Based on the transaction below, suggest 3-4 most likely spending categories.
 
+$learningContext
 Transaction Details:
 - Amount: ₹$amount
 - Merchant: $merchant
@@ -64,7 +96,7 @@ Your response:''';
 
       // Get AI response
       final response = await GeminiService.instance.generateContent(prompt);
-      
+
       if (response != null && response.isNotEmpty) {
         return _parseCategories(response);
       }
@@ -92,10 +124,7 @@ Your response:''';
       }
 
       return categories.map((name) {
-        return {
-          'name': name,
-          'emoji': categoryEmojis[name] ?? '📦',
-        };
+        return {'name': name, 'emoji': categoryEmojis[name] ?? '📦'};
       }).toList();
     } catch (e) {
       debugPrint('Error parsing categories: $e');
@@ -110,7 +139,18 @@ Your response:''';
     final suggestions = <Map<String, String>>[];
 
     // Food & Dining
-    if (_matchesAny(lowerMerchant, ['zomato', 'swiggy', 'domino', 'mcdonald', 'kfc', 'pizza', 'burger', 'restaurant', 'cafe', 'food'])) {
+    if (_matchesAny(lowerMerchant, [
+      'zomato',
+      'swiggy',
+      'domino',
+      'mcdonald',
+      'kfc',
+      'pizza',
+      'burger',
+      'restaurant',
+      'cafe',
+      'food',
+    ])) {
       suggestions.add({'name': 'Food', 'emoji': '🍕'});
       suggestions.add({'name': 'Dining', 'emoji': '🍽️'});
     }
@@ -121,37 +161,103 @@ Your response:''';
     }
 
     // Groceries
-    if (_matchesAny(lowerMerchant, ['bigbasket', 'zepto', 'blinkit', 'dmrt', 'grocery', 'mart', 'store', 'supermarket', 'reliance'])) {
+    if (_matchesAny(lowerMerchant, [
+      'bigbasket',
+      'zepto',
+      'blinkit',
+      'dmrt',
+      'grocery',
+      'mart',
+      'store',
+      'supermarket',
+      'reliance',
+    ])) {
       suggestions.add({'name': 'Groceries', 'emoji': '🛒'});
     }
 
     // Transport
-    if (_matchesAny(lowerMerchant, ['uber', 'ola', 'rapido', 'metro', 'irctc', 'railway', 'cab', 'taxi', 'auto'])) {
+    if (_matchesAny(lowerMerchant, [
+      'uber',
+      'ola',
+      'rapido',
+      'metro',
+      'irctc',
+      'railway',
+      'cab',
+      'taxi',
+      'auto',
+    ])) {
       suggestions.add({'name': 'Transport', 'emoji': '🚗'});
     }
 
     // Fuel
-    if (_matchesAny(lowerMerchant, ['petrol', 'diesel', 'fuel', 'hp', 'iocl', 'bpcl', 'shell', 'gas station'])) {
+    if (_matchesAny(lowerMerchant, [
+      'petrol',
+      'diesel',
+      'fuel',
+      'hp',
+      'iocl',
+      'bpcl',
+      'shell',
+      'gas station',
+    ])) {
       suggestions.add({'name': 'Fuel', 'emoji': '⛽'});
     }
 
     // Shopping
-    if (_matchesAny(lowerMerchant, ['amazon', 'flipkart', 'myntra', 'ajio', 'nykaa', 'shopping', 'mall', 'store'])) {
+    if (_matchesAny(lowerMerchant, [
+      'amazon',
+      'flipkart',
+      'myntra',
+      'ajio',
+      'nykaa',
+      'shopping',
+      'mall',
+      'store',
+    ])) {
       suggestions.add({'name': 'Shopping', 'emoji': '🛍️'});
     }
 
     // Entertainment
-    if (_matchesAny(lowerMerchant, ['netflix', 'hotstar', 'prime', 'spotify', 'pvr', 'inox', 'movie', 'cinema', 'theatre'])) {
+    if (_matchesAny(lowerMerchant, [
+      'netflix',
+      'hotstar',
+      'prime',
+      'spotify',
+      'pvr',
+      'inox',
+      'movie',
+      'cinema',
+      'theatre',
+    ])) {
       suggestions.add({'name': 'Entertainment', 'emoji': '🎬'});
     }
 
     // Bills & Subscriptions
-    if (_matchesAny(lowerMerchant, ['airtel', 'jio', 'vodafone', 'bsnl', 'electricity', 'water', 'gas', 'bill'])) {
+    if (_matchesAny(lowerMerchant, [
+      'airtel',
+      'jio',
+      'vodafone',
+      'bsnl',
+      'electricity',
+      'water',
+      'gas',
+      'bill',
+    ])) {
       suggestions.add({'name': 'Bills', 'emoji': '📄'});
     }
 
     // Health
-    if (_matchesAny(lowerMerchant, ['apollo', 'medplus', 'netmeds', 'pharmeasy', 'pharmacy', 'hospital', 'clinic', 'doctor'])) {
+    if (_matchesAny(lowerMerchant, [
+      'apollo',
+      'medplus',
+      'netmeds',
+      'pharmeasy',
+      'pharmacy',
+      'hospital',
+      'clinic',
+      'doctor',
+    ])) {
       suggestions.add({'name': 'Health', 'emoji': '💊'});
     }
 

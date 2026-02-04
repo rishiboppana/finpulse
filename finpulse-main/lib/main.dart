@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -18,6 +19,7 @@ import 'services/native_detection_service.dart';
 import 'services/notification_service.dart';
 import 'services/transaction_storage_service.dart';
 import 'services/service_initializer.dart';
+import 'services/app_logger.dart';
 import 'database/database.dart' hide Transaction;
 import 'database/daos/budget_dao.dart';
 import 'database/daos/custom_category_dao.dart';
@@ -27,15 +29,27 @@ import 'widgets/chart_widgets.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
+  // Initialize logger first for tracking startup
+  await AppLogger.instance.init();
+  AppLogger.instance.logDataFlowStage(
+    stage: 'APP_START',
+    description: 'FinPulse initializing',
+  );
+
   // Initialize database and new services (handles migration from SharedPreferences)
   await ServiceInitializer.initialize();
-  
+
   // Legacy services (still needed for compatibility during transition)
   await MerchantLearningService.instance.init();
   await NativeDetectionService.instance.init();
   await TransactionStorageService.instance.init();
-  
+
+  AppLogger.instance.logDataFlowStage(
+    stage: 'APP_READY',
+    description: 'All services initialized',
+  );
+
   runApp(const FinPulseApp());
 }
 
@@ -184,10 +198,7 @@ class _SplashScreen extends StatelessWidget {
             SizedBox(
               width: 24,
               height: 24,
-              child: CircularProgressIndicator(
-                strokeWidth: 2.5,
-                color: teal,
-              ),
+              child: CircularProgressIndicator(strokeWidth: 2.5, color: teal),
             ),
           ],
         ),
@@ -195,7 +206,6 @@ class _SplashScreen extends StatelessWidget {
     );
   }
 }
-
 
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
@@ -233,7 +243,7 @@ class _MainShellState extends State<MainShell> {
 
   void _showGoldenWindow(Transaction transaction) {
     if (!mounted) return;
-    
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -246,10 +256,10 @@ class _MainShellState extends State<MainShell> {
   Widget build(BuildContext context) {
     // Simplified 4-tab navigation: Home, AI, Insights, Settings
     final pages = const [
-      DashboardScreen(),   // Home - Daily spending, pending transactions
-      ChatScreen(),        // AI Chat - Conversational AI
-      StatsScreen(),       // Insights - Charts, trends, categories
-      SettingsScreen(),    // Settings - Configuration
+      DashboardScreen(), // Home - Daily spending, pending transactions
+      ChatScreen(), // AI Chat - Conversational AI
+      StatsScreen(), // Insights - Charts, trends, categories
+      SettingsScreen(), // Settings - Configuration
     ];
 
     return Scaffold(
@@ -314,10 +324,7 @@ class _MainShellState extends State<MainShell> {
             const SizedBox(height: 20),
             const Text(
               'Add Transaction',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 20),
             Row(
@@ -343,7 +350,9 @@ class _MainShellState extends State<MainShell> {
                       Navigator.pop(context);
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (_) => const ReceiptScanScreen()),
+                        MaterialPageRoute(
+                          builder: (_) => const ReceiptScanScreen(),
+                        ),
                       );
                     },
                   ),
@@ -386,10 +395,7 @@ class _AddOptionCard extends StatelessWidget {
           children: [
             Container(
               padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: color,
-                shape: BoxShape.circle,
-              ),
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
               child: Icon(icon, color: Colors.white, size: 28),
             ),
             const SizedBox(height: 12),
@@ -408,7 +414,7 @@ class _AddOptionCard extends StatelessWidget {
   }
 }
 
-//Below is the code for Dashboard or Homepage 
+//Below is the code for Dashboard or Homepage
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
 
@@ -417,52 +423,103 @@ class DashboardScreen extends StatefulWidget {
 }
 
 enum _AccountMode { debit, credit }
+
 enum _ScopeMode { daily, monthly }
 
 class _DashboardScreenState extends State<DashboardScreen> {
   int activeAccountIndex = 0;
   final PageController _acctController = PageController(viewportFraction: 0.92);
-  
+
   // Toggles
   _AccountMode accountMode = _AccountMode.debit;
   _ScopeMode scopeMode = _ScopeMode.daily;
 
-  // Real transactions from database
+  // Real transactions from database (reactive)
   List<Transaction> _pendingTransactions = [];
   List<Transaction> _todayTransactions = [];
   Map<String, double> _categorySpending = {};
   double _todaySpending = 0.0;
   bool _isLoading = true;
 
+  // Stream subscriptions for reactive updates
+  StreamSubscription<List<Transaction>>? _uncategorizedSub;
+  StreamSubscription<List<Transaction>>? _todaySub;
+
   @override
   void initState() {
     super.initState();
-    _loadRealData();
+    _setupReactiveStreams();
   }
 
-  Future<void> _loadRealData() async {
+  @override
+  void dispose() {
+    _uncategorizedSub?.cancel();
+    _todaySub?.cancel();
+    _acctController.dispose();
+    super.dispose();
+  }
+
+  /// Setup reactive streams for automatic UI updates
+  void _setupReactiveStreams() async {
     final txService = ServiceInitializer.transactions;
     await txService.init();
-    
-    // Get uncategorized transactions (pending)
-    final uncategorized = await txService.getUncategorizedTransactions();
-    
-    // Get today's transactions
-    final todayTxs = await txService.todayTransactionsAsync; // Need to ensure this getter exists or use getTodayTransactions()
 
-    // Get today's spending
-    final todaySpend = await txService.getTodaySpendingAsync();
-    
-    // Get category breakdown
+    // Watch uncategorized transactions (pending) - auto-updates on change
+    _uncategorizedSub = txService.watchUncategorized().listen((uncategorized) {
+      if (mounted) {
+        setState(() {
+          _pendingTransactions = uncategorized;
+        });
+      }
+    });
+
+    // Watch today's transactions - auto-updates on change
+    _todaySub = txService.watchTodayTransactions().listen((todayTxs) {
+      if (mounted) {
+        // Calculate spending from transactions
+        double spending = 0.0;
+        final Map<String, double> categories = {};
+
+        for (final tx in todayTxs) {
+          if (tx.type == TransactionType.debit) {
+            spending += tx.amount;
+            final cat = tx.category ?? 'Uncategorized';
+            categories[cat] = (categories[cat] ?? 0) + tx.amount;
+          }
+        }
+
+        setState(() {
+          _todayTransactions = todayTxs;
+          _todaySpending = spending;
+          _categorySpending = categories;
+          _isLoading = false;
+        });
+      }
+    });
+
+    // Initial load for category spending (for non-today data)
+    _loadCategorySpending();
+  }
+
+  /// Load category spending for scope beyond today
+  Future<void> _loadCategorySpending() async {
+    final txService = ServiceInitializer.transactions;
     final categories = await txService.getSpendingByCategoryAsync();
-    
     if (mounted) {
       setState(() {
-        _pendingTransactions = uncategorized;
-        _todayTransactions = todayTxs;
-        _todaySpending = todaySpend;
         _categorySpending = categories;
         _isLoading = false;
+      });
+    }
+  }
+
+  /// Force refresh (for pull-to-refresh scenarios)
+  Future<void> _refreshData() async {
+    final txService = ServiceInitializer.transactions;
+    final categories = await txService.getSpendingByCategoryAsync();
+    if (mounted) {
+      setState(() {
+        _categorySpending = categories;
       });
     }
   }
@@ -470,12 +527,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // Generate mini bars from real category spending
   List<_MiniCatBar> get miniBars {
     if (_categorySpending.isEmpty) {
-      return const [
-        _MiniCatBar(label: "No data", value: 0.0),
-      ];
+      return const [_MiniCatBar(label: "No data", value: 0.0)];
     }
-    
-    final maxSpend = _categorySpending.values.fold(0.0, (a, b) => a > b ? a : b);
+
+    final maxSpend = _categorySpending.values.fold(
+      0.0,
+      (a, b) => a > b ? a : b,
+    );
     return _categorySpending.entries.take(3).map((e) {
       return _MiniCatBar(
         label: e.key,
@@ -487,37 +545,44 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // Insights (generated from real data)
   List<_InsightData> get homeInsights {
     final insights = <_InsightData>[];
-    
+
     if (_pendingTransactions.isNotEmpty) {
-      insights.add(_InsightData(
-        icon: Icons.pending_actions_rounded,
-        iconBg: const Color(0xFFFFF1E7),
-        iconColor: const Color(0xFFF97316),
-        title: "${_pendingTransactions.length} transactions need categorization",
-        subtitle: "Tap to categorize them now",
-      ));
+      insights.add(
+        _InsightData(
+          icon: Icons.pending_actions_rounded,
+          iconBg: const Color(0xFFFFF1E7),
+          iconColor: const Color(0xFFF97316),
+          title:
+              "${_pendingTransactions.length} transactions need categorization",
+          subtitle: "Tap to categorize them now",
+        ),
+      );
     }
-    
+
     if (_todaySpending > 0) {
-      insights.add(_InsightData(
-        icon: Icons.account_balance_wallet_rounded,
-        iconBg: const Color(0xFFE9FFF9),
-        iconColor: const Color(0xFF10B981),
-        title: "Today you've spent ₹${_todaySpending.toStringAsFixed(0)}",
-        subtitle: "Keep tracking to stay on budget",
-      ));
+      insights.add(
+        _InsightData(
+          icon: Icons.account_balance_wallet_rounded,
+          iconBg: const Color(0xFFE9FFF9),
+          iconColor: const Color(0xFF10B981),
+          title: "Today you've spent ₹${_todaySpending.toStringAsFixed(0)}",
+          subtitle: "Keep tracking to stay on budget",
+        ),
+      );
     }
-    
+
     if (insights.isEmpty) {
-      insights.add(const _InsightData(
-        icon: Icons.lightbulb_outline_rounded,
-        iconBg: Color(0xFFF0F9FF),
-        iconColor: Color(0xFF0EA5E9),
-        title: "Start by adding some transactions",
-        subtitle: "Use the + button or enable SMS detection",
-      ));
+      insights.add(
+        const _InsightData(
+          icon: Icons.lightbulb_outline_rounded,
+          iconBg: Color(0xFFF0F9FF),
+          iconColor: Color(0xFF0EA5E9),
+          title: "Start by adding some transactions",
+          subtitle: "Use the + button or enable SMS detection",
+        ),
+      );
     }
-    
+
     return insights;
   }
 
@@ -534,18 +599,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
           builder: (context, bank, _) {
             // Get accounts based on toggle (Debit=Savings/Current, Credit=CreditCard)
             final allAccounts = bank.accounts;
-            
+
             // Construct display list
             final displayList = <dynamic>[
-              {'id': 'all', 'title': 'All Accounts', 'subtitle': 'Aggregated', 'balance': bank.totalBalance, 'formatted': bank.formattedTotalBalance},
-              ...allAccounts.map((a) => {
-                'id': a.id,
-                'title': a.accountName,
-                'subtitle': "${a.institutionName} • ${a.maskedNumber}",
-                'balance': a.balance,
-                'formatted': a.formattedBalance,
-                'institutionId': a.institutionId,
-              })
+              {
+                'id': 'all',
+                'title': 'All Accounts',
+                'subtitle': 'Aggregated',
+                'balance': bank.totalBalance,
+                'formatted': bank.formattedTotalBalance,
+              },
+              ...allAccounts.map(
+                (a) => {
+                  'id': a.id,
+                  'title': a.accountName,
+                  'subtitle': "${a.institutionName} • ${a.maskedNumber}",
+                  'balance': a.balance,
+                  'formatted': a.formattedBalance,
+                  'institutionId': a.institutionId,
+                },
+              ),
             ];
 
             // Safety check for index
@@ -576,7 +649,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                     ),
                     const Spacer(),
-                    _RoundIcon(icon: Icons.notifications_none_rounded, onTap: () {}),
+                    _RoundIcon(
+                      icon: Icons.notifications_none_rounded,
+                      onTap: () {},
+                    ),
                   ],
                 ),
 
@@ -588,7 +664,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     _PillToggle(
                       label: "Accounts",
                       selected: accountMode == _AccountMode.debit,
-                      onTap: () => setState(() => accountMode = _AccountMode.debit),
+                      onTap: () =>
+                          setState(() => accountMode = _AccountMode.debit),
                     ),
                     const SizedBox(width: 10),
                     // Hidden for now since we don't differentiate yet
@@ -597,14 +674,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     // scopeMode helps switch between Spend vs Balance display?
                     // For now, let's stick to Balance since we have that real data
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
                       decoration: BoxDecoration(
                         color: const Color(0xFFEFF2F6),
                         borderRadius: BorderRadius.circular(999),
                       ),
                       child: Text(
                         "Live Balance",
-                        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: muted),
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                          color: muted,
+                        ),
                       ),
                     ),
                   ],
@@ -618,11 +702,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   child: PageView.builder(
                     controller: _acctController,
                     itemCount: displayList.length,
-                    onPageChanged: (i) => setState(() => activeAccountIndex = i),
+                    onPageChanged: (i) =>
+                        setState(() => activeAccountIndex = i),
                     itemBuilder: (_, i) {
                       final item = displayList[i];
                       final isAll = i == 0;
-                      
+
                       // Get bank color if individual account
                       Color accentColor = const Color(0xFFE9FFF9);
                       if (!isAll) {
@@ -633,7 +718,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       }
 
                       return Padding(
-                        padding: EdgeInsets.only(right: i == displayList.length - 1 ? 0 : 12),
+                        padding: EdgeInsets.only(
+                          right: i == displayList.length - 1 ? 0 : 12,
+                        ),
                         child: Card(
                           child: Container(
                             decoration: BoxDecoration(
@@ -646,7 +733,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 // Left: account label + balance
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Text(
                                         item['title'],
@@ -694,19 +782,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                       ),
                                       const Spacer(),
                                       Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 8,
+                                        ),
                                         decoration: BoxDecoration(
                                           color: teal.withOpacity(0.12),
-                                          borderRadius: BorderRadius.circular(999),
+                                          borderRadius: BorderRadius.circular(
+                                            999,
+                                          ),
                                         ),
                                         child: Row(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
-                                            Icon(Icons.trending_up, size: 18, color: teal),
+                                            Icon(
+                                              Icons.trending_up,
+                                              size: 18,
+                                              color: teal,
+                                            ),
                                             const SizedBox(width: 6),
                                             const Text(
-                                              "Updated just now", 
-                                              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 11), // Updated style
+                                              "Updated just now",
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w800,
+                                                fontSize: 11,
+                                              ), // Updated style
                                             ),
                                           ],
                                         ),
@@ -751,155 +851,208 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   }),
                 ),
 
-            const SizedBox(height: 18),
+                const SizedBox(height: 18),
 
-            // Yet to Transponse (pending queue)
-            Row(
-              children: [
-                Text(
-                  "Yet to Transponse",
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: textDark),
+                // Yet to Transponse (pending queue)
+                Row(
+                  children: [
+                    Text(
+                      "Yet to Transponse",
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                        color: textDark,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      "${visiblePending.length} pending",
+                      style: TextStyle(
+                        color: muted,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
                 ),
-                const Spacer(),
-                Text(
-                  "${visiblePending.length} pending",
-                  style: TextStyle(color: muted, fontWeight: FontWeight.w700),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
+                const SizedBox(height: 10),
 
-            if (visiblePending.isEmpty)
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.check_circle_rounded, color: Color(0xFF10B981)),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          "All caught up. No pending transactions.",
-                          style: TextStyle(color: textDark, fontWeight: FontWeight.w800),
+                if (visiblePending.isEmpty)
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.check_circle_rounded,
+                            color: Color(0xFF10B981),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              "All caught up. No pending transactions.",
+                              style: TextStyle(
+                                color: textDark,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                else
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        children: [
+                          for (
+                            int i = 0;
+                            i <
+                                (visiblePending.length > 3
+                                    ? 3
+                                    : visiblePending.length);
+                            i++
+                          )
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 10),
+                              child: _PendingDismissTile(
+                                txn: visiblePending[i],
+                                onCategorize: () =>
+                                    _categorizeTxn(visiblePending[i]),
+                                onSnooze: () => _snoozeTxn(visiblePending[i]),
+                              ),
+                            ),
+                          if (visiblePending.length > 3)
+                            InkWell(
+                              borderRadius: BorderRadius.circular(999),
+                              onTap: () => _showAllPending(),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 10,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: teal.withOpacity(0.10),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: Text(
+                                  "Show ${visiblePending.length - 3} more",
+                                  style: TextStyle(
+                                    color: teal,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                const SizedBox(height: 18),
+
+                // A little help! (swipeable Yes/No prompt)
+                Row(
+                  children: [
+                    Text(
+                      "A little help!",
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                        color: textDark,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      "Swipe",
+                      style: TextStyle(
+                        color: muted,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+
+                _QuickConfirmCarousel(
+                  items: visiblePending.take(5).toList(),
+                  onConfirm: (txn) => _saveCategory(txn, "Groceries"),
+                  onEdit: (txn) =>
+                      _categorizeTxn(txn), // opens rename + category sheet
+                ),
+
+                const SizedBox(height: 18),
+
+                // Daily Target vs Usage (two donuts) on HOME
+                _BudgetVsActualCard(
+                  title: "Target vs Actual",
+                  rows: const [
+                    _BudgetActualRow(label: "Food", budget: 35, actual: 42),
+                    _BudgetActualRow(label: "Bills", budget: 30, actual: 28),
+                    _BudgetActualRow(label: "Fuel", budget: 20, actual: 18),
+                    _BudgetActualRow(label: "Shopping", budget: 15, actual: 22),
+                  ],
+                  footer: "You’re over on Shopping. Under on Bills & Fuel.",
+                ),
+
+                const SizedBox(height: 18),
+
+                // Insights Today (Home-only)
+                Row(
+                  children: [
+                    Text(
+                      "Insights Today",
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                        color: textDark,
+                      ),
+                    ),
+                    const Spacer(),
+                    TextButton(
+                      onPressed: () {
+                        // Later: navigate to full insights
+                      },
+                      child: Text(
+                        "View All",
+                        style: TextStyle(
+                          color: teal,
+                          fontWeight: FontWeight.w900,
                         ),
                       ),
-                    ],
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+
+                ...homeInsights.map(
+                  (x) => Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: _InsightCard(data: x),
                   ),
                 ),
-              )
-            else
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    children: [
-                      for (int i = 0; i < (visiblePending.length > 3 ? 3 : visiblePending.length); i++)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
-                          child: _PendingDismissTile(
-                            txn: visiblePending[i],
-                            onCategorize: () => _categorizeTxn(visiblePending[i]),
-                            onSnooze: () => _snoozeTxn(visiblePending[i]),
-                          ),
-                        ),
-                      if (visiblePending.length > 3)
-                        InkWell(
-                          borderRadius: BorderRadius.circular(999),
-                          onTap: () => _showAllPending(),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                            decoration: BoxDecoration(
-                              color: teal.withOpacity(0.10),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Text(
-                              "Show ${visiblePending.length - 3} more",
-                              style: TextStyle(color: teal, fontWeight: FontWeight.w900),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
 
-            const SizedBox(height: 18),
-
-            // A little help! (swipeable Yes/No prompt)
-            Row(
-              children: [
-                Text(
-                  "A little help!",
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: textDark),
-                ),
-                const Spacer(),
-                Text(
-                  "Swipe",
-                  style: TextStyle(color: muted, fontWeight: FontWeight.w700),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-
-            _QuickConfirmCarousel(
-              items: visiblePending.take(5).toList(),
-              onConfirm: (txn) => _saveCategory(txn, "Groceries"),
-              onEdit: (txn) => _categorizeTxn(txn), // opens rename + category sheet
-            ),
-
-
-            const SizedBox(height: 18),
-
-            // Daily Target vs Usage (two donuts) on HOME
-            _BudgetVsActualCard(
-              title: "Target vs Actual",
-              rows: const [
-                _BudgetActualRow(label: "Food", budget: 35, actual: 42),
-                _BudgetActualRow(label: "Bills", budget: 30, actual: 28),
-                _BudgetActualRow(label: "Fuel", budget: 20, actual: 18),
-                _BudgetActualRow(label: "Shopping", budget: 15, actual: 22),
-              ],
-              footer: "You’re over on Shopping. Under on Bills & Fuel.",
-            ),
-
-            const SizedBox(height: 18),
-
-            // Insights Today (Home-only)
-            Row(
-              children: [
-                Text(
-                  "Insights Today",
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: textDark),
-                ),
-                const Spacer(),
-                TextButton(
-                  onPressed: () {
-                    // Later: navigate to full insights
-                  },
-                  child: Text("View All", style: TextStyle(color: teal, fontWeight: FontWeight.w900)),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-
-            ...homeInsights.map((x) => Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: _InsightCard(data: x),
-                )),
-
-            const SizedBox(height: 12),
+                const SizedBox(height: 12),
 
                 // Spending Charts Section
                 Text(
                   "Spending Overview",
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: textDark),
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    color: textDark,
+                  ),
                 ),
                 const SizedBox(height: 12),
 
                 // Pie Chart - Category Breakdown
                 SpendingPieChart(
                   data: ChartSampleData.getCategoryData(),
-                  total: ChartSampleData.getCategoryData().fold(0.0, (sum, item) => sum + item.amount),
+                  total: ChartSampleData.getCategoryData().fold(
+                    0.0,
+                    (sum, item) => sum + item.amount,
+                  ),
                 ),
 
                 const SizedBox(height: 16),
@@ -921,81 +1074,121 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
                 const SizedBox(height: 18),
 
-            // Today's Transactions list (real data)
-            Text(
-              "Today’s Transactions",
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: textDark),
-            ),
-            const SizedBox(height: 10),
-
-            if (_todayTransactions.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 20),
-                child: Center(
-                  child: Text(
-                    "No transactions today yet",
-                    style: TextStyle(color: muted, fontWeight: FontWeight.w700),
+                // Today's Transactions list (real data)
+                Text(
+                  "Today’s Transactions",
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    color: textDark,
                   ),
                 ),
-              )
-            else
-              ..._todayTransactions.take(5).map((tx) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: _TodayTxnRow(
-                  time: "${tx.timestamp.hour > 12 ? tx.timestamp.hour - 12 : tx.timestamp.hour}:${tx.timestamp.minute.toString().padLeft(2, '0')} ${tx.timestamp.hour >= 12 ? 'PM' : 'AM'}",
-                  merchant: tx.merchantName ?? tx.rawMerchantId ?? "Unknown",
-                  amount: "-\$${tx.amount.toStringAsFixed(2)}",
-                  category: tx.category ?? "UNCATEGORIZED",
-                  onFix: () {
-                     _categorizeTxn(tx);
-                  },
-                ),
-              )),
+                const SizedBox(height: 10),
 
-            const SizedBox(height: 90),
-          ],
-        );
-      },
-    ),
+                if (_todayTransactions.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 20),
+                    child: Center(
+                      child: Text(
+                        "No transactions today yet",
+                        style: TextStyle(
+                          color: muted,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  )
+                else
+                  ..._todayTransactions
+                      .take(5)
+                      .map(
+                        (tx) => Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: _TodayTxnRow(
+                            time:
+                                "${tx.timestamp.hour > 12 ? tx.timestamp.hour - 12 : tx.timestamp.hour}:${tx.timestamp.minute.toString().padLeft(2, '0')} ${tx.timestamp.hour >= 12 ? 'PM' : 'AM'}",
+                            merchant:
+                                tx.merchantName ??
+                                tx.rawMerchantId ??
+                                "Unknown",
+                            amount: "-\$${tx.amount.toStringAsFixed(2)}",
+                            category: tx.category ?? "UNCATEGORIZED",
+                            onFix: () {
+                              _categorizeTxn(tx);
+                            },
+                          ),
+                        ),
+                      ),
+
+                const SizedBox(height: 90),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
-  
+
   Future<void> _categorizeTxn(Transaction txn) async {
     final result = await showModalBottomSheet<String>(
-    context: context,
-    showDragHandle: true,
-    builder: (_) => _ConfirmBottomSheet(merchant: txn.merchantName ?? txn.rawMerchantId ?? "Unknown"),
-  );
-
-  if (result != null && mounted) {
-    final parts = result.split("|||");
-    final newName = parts.first;
-    final category = parts.length > 1 ? parts[1] : "Other";
-
-    // Update transaction in database
-    final updatedTxn = txn.copyWith(
-      merchantName: newName,
-      category: category,
+      context: context,
+      showDragHandle: true,
+      builder: (_) => _ConfirmBottomSheet(
+        merchant: txn.merchantName ?? txn.rawMerchantId ?? "Unknown",
+      ),
     );
-    
-    await ServiceInitializer.transactions.updateTransaction(updatedTxn);
-    await _loadRealData(); // Refresh UI
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("Saved: $newName → $category")),
-    );
-  }
+    if (result != null && mounted) {
+      final parts = result.split("|||");
+      final newName = parts.first;
+      final category = parts.length > 1 ? parts[1] : "Other";
+
+      // Update transaction in database
+      final updatedTxn = txn.copyWith(
+        merchantName: newName,
+        category: category,
+      );
+
+      await ServiceInitializer.transactions.updateTransaction(updatedTxn);
+      // UI updates automatically via reactive streams
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Saved: $newName → $category")));
+    }
   }
 
   Future<void> _saveCategory(Transaction txn, String category) async {
     // Update transaction in database
     final updatedTxn = txn.copyWith(category: category);
     await ServiceInitializer.transactions.updateTransaction(updatedTxn);
-    await _loadRealData(); // Refresh UI
+
+    // Record user response for Gemini learning
+    try {
+      final db = AppDatabase.instance;
+      final now = DateTime.now().millisecondsSinceEpoch;
+      await db.userResponseDao.insertResponse(
+        UserResponsesCompanion.insert(
+          transactionId: txn.id,
+          inputMethod: 'tap',
+          finalCategory: category,
+          createdAt: now,
+          merchantAtTime: Value(txn.rawMerchantId),
+          amountAtTime: Value(txn.amount),
+          confirmedAt: Value(now),
+        ),
+      );
+      debugPrint('[main] Recorded category selection for learning');
+    } catch (e) {
+      debugPrint('[main] Failed to record user response: $e');
+    }
+
+    // UI updates automatically via reactive streams
 
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("Saved: ${txn.merchantName ?? 'Merchant'} → $category")),
+      SnackBar(
+        content: Text("Saved: ${txn.merchantName ?? 'Merchant'} → $category"),
+      ),
     );
   }
 
@@ -1014,7 +1207,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(18, 6, 18, 18),
           children: [
-            const Text("All Pending", style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+            const Text(
+              "All Pending",
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+            ),
             const SizedBox(height: 12),
             for (final x in List<Transaction>.from(_pendingTransactions))
               Padding(
@@ -1062,11 +1258,10 @@ class _BudgetVsActualCard extends StatelessWidget {
     final muted = const Color(0xFF64748B);
 
     // scale to the max value so bars look proportional
-    final maxV = rows.fold<double>(0, (m, r) => [
-          m,
-          r.budget,
-          r.actual,
-        ].reduce((a, b) => a > b ? a : b));
+    final maxV = rows.fold<double>(
+      0,
+      (m, r) => [m, r.budget, r.actual].reduce((a, b) => a > b ? a : b),
+    );
 
     return Card(
       child: Padding(
@@ -1074,7 +1269,14 @@ class _BudgetVsActualCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: textDark)),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+                color: textDark,
+              ),
+            ),
             const SizedBox(height: 12),
 
             // header labels
@@ -1082,10 +1284,16 @@ class _BudgetVsActualCard extends StatelessWidget {
               children: [
                 const SizedBox(width: 92),
                 Expanded(
-                  child: Text("Budget", style: TextStyle(color: muted, fontWeight: FontWeight.w800)),
+                  child: Text(
+                    "Budget",
+                    style: TextStyle(color: muted, fontWeight: FontWeight.w800),
+                  ),
                 ),
                 Expanded(
-                  child: Text("Actual", style: TextStyle(color: muted, fontWeight: FontWeight.w800)),
+                  child: Text(
+                    "Actual",
+                    style: TextStyle(color: muted, fontWeight: FontWeight.w800),
+                  ),
                 ),
               ],
             ),
@@ -1097,7 +1305,10 @@ class _BudgetVsActualCard extends StatelessWidget {
             ],
 
             const SizedBox(height: 2),
-            Text(footer, style: TextStyle(color: muted, fontWeight: FontWeight.w700)),
+            Text(
+              footer,
+              style: TextStyle(color: muted, fontWeight: FontWeight.w700),
+            ),
           ],
         ),
       ),
@@ -1109,10 +1320,7 @@ class _BudgetVsActualRowView extends StatelessWidget {
   final _BudgetActualRow row;
   final double maxV;
 
-  const _BudgetVsActualRowView({
-    required this.row,
-    required this.maxV,
-  });
+  const _BudgetVsActualRowView({required this.row, required this.maxV});
 
   @override
   Widget build(BuildContext context) {
@@ -1160,7 +1368,11 @@ class _BudgetVsActualRowView extends StatelessWidget {
                   alignment: Alignment.center,
                   child: Text(
                     "\$${row.budget.toStringAsFixed(0)}",
-                    style: TextStyle(color: textDark, fontWeight: FontWeight.w900, fontSize: 12),
+                    style: TextStyle(
+                      color: textDark,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
               ),
@@ -1196,7 +1408,11 @@ class _BudgetVsActualRowView extends StatelessWidget {
                   alignment: Alignment.center,
                   child: Text(
                     "\$${row.actual.toStringAsFixed(0)}",
-                    style: TextStyle(color: Colors.black, fontWeight: FontWeight.w900, fontSize: 12),
+                    style: TextStyle(
+                      color: Colors.black,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
               ),
@@ -1207,9 +1423,6 @@ class _BudgetVsActualRowView extends StatelessWidget {
     );
   }
 }
-
-
-
 
 class _MiniCatBar {
   final String label;
@@ -1245,10 +1458,7 @@ class _PillToggle extends StatelessWidget {
         ),
         child: Text(
           label,
-          style: TextStyle(
-            fontWeight: FontWeight.w900,
-            color: Colors.black,
-          ),
+          style: TextStyle(fontWeight: FontWeight.w900, color: Colors.black),
         ),
       ),
     );
@@ -1267,7 +1477,10 @@ class _MiniCategoryBars extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text("Top categories", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12)),
+        const Text(
+          "Top categories",
+          style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12),
+        ),
         const SizedBox(height: 10),
         for (final b in bars)
           Padding(
@@ -1279,7 +1492,11 @@ class _MiniCategoryBars extends StatelessWidget {
                     width: 44,
                     child: Text(
                       b.label,
-                      style: TextStyle(color: muted, fontWeight: FontWeight.w800, fontSize: 12),
+                      style: TextStyle(
+                        color: muted,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12,
+                      ),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
@@ -1348,7 +1565,11 @@ class _PendingDismissTile extends StatelessWidget {
               Icon(Icons.check_circle_rounded, color: teal),
               const SizedBox(width: 10),
               Flexible(
-                child: Text("Categorize", style: TextStyle(color: teal, fontWeight: FontWeight.w900), overflow: TextOverflow.ellipsis),
+                child: Text(
+                  "Categorize",
+                  style: TextStyle(color: teal, fontWeight: FontWeight.w900),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ],
           ),
@@ -1368,7 +1589,14 @@ class _PendingDismissTile extends StatelessWidget {
               const Icon(Icons.snooze_rounded, color: Color(0xFFF43F5E)),
               const SizedBox(width: 10),
               Flexible(
-                child: Text("Later", style: const TextStyle(color: Color(0xFFF43F5E), fontWeight: FontWeight.w900), overflow: TextOverflow.ellipsis),
+                child: Text(
+                  "Later",
+                  style: const TextStyle(
+                    color: Color(0xFFF43F5E),
+                    fontWeight: FontWeight.w900,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ],
           ),
@@ -1399,17 +1627,28 @@ class _PendingDismissTile extends StatelessWidget {
                 color: const Color(0xFFEFF2F6),
                 borderRadius: BorderRadius.circular(16),
               ),
-              child: const Icon(Icons.help_outline_rounded, color: Color(0xFF334155)),
+              child: const Icon(
+                Icons.help_outline_rounded,
+                color: Color(0xFF334155),
+              ),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(txn.merchantName ?? txn.rawMerchantId ?? "Unknown Merchant", 
-                       style: TextStyle(color: textDark, fontWeight: FontWeight.w900)),
+                  Text(
+                    txn.merchantName ?? txn.rawMerchantId ?? "Unknown Merchant",
+                    style: TextStyle(
+                      color: textDark,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
                   const SizedBox(height: 4),
-                  Text(_formatDate(txn.timestamp), style: TextStyle(color: muted, fontWeight: FontWeight.w700)),
+                  Text(
+                    _formatDate(txn.timestamp),
+                    style: TextStyle(color: muted, fontWeight: FontWeight.w700),
+                  ),
                 ],
               ),
             ),
@@ -1417,7 +1656,13 @@ class _PendingDismissTile extends StatelessWidget {
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Text("-\$${txn.amount.toStringAsFixed(2)}", style: TextStyle(color: textDark, fontWeight: FontWeight.w900)),
+                Text(
+                  "-\$${txn.amount.toStringAsFixed(2)}",
+                  style: TextStyle(
+                    color: textDark,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
                 const SizedBox(height: 8),
                 SizedBox(
                   height: 32,
@@ -1427,10 +1672,15 @@ class _PendingDismissTile extends StatelessWidget {
                       backgroundColor: teal,
                       foregroundColor: Colors.black,
                       elevation: 0,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(999),
+                      ),
                       padding: const EdgeInsets.symmetric(horizontal: 12),
                     ),
-                    child: const Text("Fix", style: TextStyle(fontWeight: FontWeight.w900)),
+                    child: const Text(
+                      "Fix",
+                      style: TextStyle(fontWeight: FontWeight.w900),
+                    ),
                   ),
                 ),
               ],
@@ -1440,10 +1690,12 @@ class _PendingDismissTile extends StatelessWidget {
       ),
     );
   }
-  
+
   String _formatDate(DateTime date) {
     final now = DateTime.now();
-    if (date.year == now.year && date.month == now.month && date.day == now.day) {
+    if (date.year == now.year &&
+        date.month == now.month &&
+        date.day == now.day) {
       return "Today • ${date.hour > 12 ? date.hour - 12 : date.hour}:${date.minute.toString().padLeft(2, '0')} ${date.hour >= 12 ? 'PM' : 'AM'}";
     }
     return "${date.day}/${date.month} • ${date.hour > 12 ? date.hour - 12 : date.hour}:${date.minute.toString().padLeft(2, '0')} ${date.hour >= 12 ? 'PM' : 'AM'}";
@@ -1547,7 +1799,10 @@ class _QuickConfirmCarouselState extends State<_QuickConfirmCarousel> {
                           crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
                               decoration: BoxDecoration(
                                 color: teal.withOpacity(0.12),
                                 borderRadius: BorderRadius.circular(999),
@@ -1585,7 +1840,9 @@ class _QuickConfirmCarouselState extends State<_QuickConfirmCarousel> {
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(12),
                                   ),
-                                  side: const BorderSide(color: Color(0xFFE5E7EB)),
+                                  side: const BorderSide(
+                                    color: Color(0xFFE5E7EB),
+                                  ),
                                 ),
                                 child: const Text(
                                   "Edit",
@@ -1626,6 +1883,7 @@ class _QuickConfirmCarouselState extends State<_QuickConfirmCarousel> {
       ],
     );
   }
+
   String _formatDate(DateTime date) {
     return "${date.day}/${date.month} ${date.hour > 12 ? date.hour - 12 : date.hour}:${date.minute.toString().padLeft(2, '0')} ${date.hour >= 12 ? 'PM' : 'AM'}";
   }
@@ -1643,7 +1901,6 @@ class _HomeAccount {
     required this.accentBg,
   });
 }
-
 
 class _TodayTxnRow extends StatelessWidget {
   final String time;
@@ -1675,13 +1932,22 @@ class _TodayTxnRow extends StatelessWidget {
           children: [
             SizedBox(
               width: 70,
-              child: Text(time, style: TextStyle(color: muted, fontWeight: FontWeight.w800)),
+              child: Text(
+                time,
+                style: TextStyle(color: muted, fontWeight: FontWeight.w800),
+              ),
             ),
             Expanded(
-              child: Text(merchant, style: TextStyle(color: textDark, fontWeight: FontWeight.w900)),
+              child: Text(
+                merchant,
+                style: TextStyle(color: textDark, fontWeight: FontWeight.w900),
+              ),
             ),
             const SizedBox(width: 10),
-            Text(amount, style: TextStyle(color: textDark, fontWeight: FontWeight.w900)),
+            Text(
+              amount,
+              style: TextStyle(color: textDark, fontWeight: FontWeight.w900),
+            ),
             const SizedBox(width: 12),
             if (isUncat)
               SizedBox(
@@ -1689,20 +1955,34 @@ class _TodayTxnRow extends StatelessWidget {
                 child: OutlinedButton(
                   onPressed: onFix,
                   style: OutlinedButton.styleFrom(
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                     side: BorderSide(color: teal),
                   ),
-                  child: const Text("Fix", style: TextStyle(fontWeight: FontWeight.w900)),
+                  child: const Text(
+                    "Fix",
+                    style: TextStyle(fontWeight: FontWeight.w900),
+                  ),
                 ),
               )
             else
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
                   color: teal.withOpacity(0.12),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Text(category, style: TextStyle(color: textDark, fontWeight: FontWeight.w900)),
+                child: Text(
+                  category,
+                  style: TextStyle(
+                    color: textDark,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
               ),
           ],
         ),
@@ -1711,7 +1991,7 @@ class _TodayTxnRow extends StatelessWidget {
   }
 }
 
-// Below is th ecode for Categories and Vendors Screen 
+// Below is th ecode for Categories and Vendors Screen
 class CategoriesScreen extends StatefulWidget {
   const CategoriesScreen({super.key});
 
@@ -1720,7 +2000,14 @@ class CategoriesScreen extends StatefulWidget {
 }
 
 class _CategoriesScreenState extends State<CategoriesScreen> {
-  final List<String> mainCategories = ["Food", "Transport", "Utilities", "Health", "Shopping", "Entertainment"];
+  final List<String> mainCategories = [
+    "Food",
+    "Transport",
+    "Utilities",
+    "Health",
+    "Shopping",
+    "Entertainment",
+  ];
   List<CustomCategory> customCategories = [];
   Map<String, double> categoryTotals = {};
   bool isLoading = true;
@@ -1732,9 +2019,11 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
   }
 
   Future<void> _loadData() async {
-    final custom = await ServiceInitializer.database.customCategoryDao.getAllActive();
-    final totals = await ServiceInitializer.transactions.getSpendingByCategoryAsync();
-    
+    final custom = await ServiceInitializer.database.customCategoryDao
+        .getAllActive();
+    final totals = await ServiceInitializer.transactions
+        .getSpendingByCategoryAsync();
+
     if (mounted) {
       setState(() {
         customCategories = custom;
@@ -1790,7 +2079,13 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
-        title: const Text("Manage Categories", style: TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+        title: const Text(
+          "Manage Categories",
+          style: TextStyle(
+            fontWeight: FontWeight.w900,
+            color: Color(0xFF0F172A),
+          ),
+        ),
         backgroundColor: Colors.white,
         elevation: 0,
         iconTheme: const IconThemeData(color: Color(0xFF0F172A)),
@@ -1799,7 +2094,10 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
             onPressed: _addCustomCategory,
             icon: Container(
               padding: const EdgeInsets.all(8),
-              decoration: const BoxDecoration(color: Color(0xFF29D6C7), shape: BoxShape.circle),
+              decoration: const BoxDecoration(
+                color: Color(0xFF29D6C7),
+                shape: BoxShape.circle,
+              ),
               child: const Icon(Icons.add, color: Colors.white, size: 20),
             ),
           ),
@@ -1813,25 +2111,44 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Main Categories
-              const Text("Standard Categories", style: TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.w900, letterSpacing: 1.1)),
+              const Text(
+                "Standard Categories",
+                style: TextStyle(
+                  color: Color(0xFF64748B),
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.1,
+                ),
+              ),
               const SizedBox(height: 12),
-              ...mainCategories.map((c) => _CategoryListTile(
-                    category: c,
-                    total: _getCategoryTotal(c),
-                  )),
+              ...mainCategories.map(
+                (c) =>
+                    _CategoryListTile(category: c, total: _getCategoryTotal(c)),
+              ),
 
               const SizedBox(height: 24),
 
               // Custom Categories
               Row(
                 children: [
-                   const Text("Custom Categories", style: TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.w900, letterSpacing: 1.1)),
+                  const Text(
+                    "Custom Categories",
+                    style: TextStyle(
+                      color: Color(0xFF64748B),
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.1,
+                    ),
+                  ),
                   const Spacer(),
-                  if (isLoading) const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                  if (isLoading)
+                    const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
                 ],
               ),
               const SizedBox(height: 12),
-              
+
               if (customCategories.isEmpty)
                 Container(
                   padding: const EdgeInsets.all(20),
@@ -1843,18 +2160,30 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
                   ),
                   child: Column(
                     children: [
-                      Icon(Icons.label_outline_rounded, color: const Color(0xFF64748B).withOpacity(0.5), size: 32),
+                      Icon(
+                        Icons.label_outline_rounded,
+                        color: const Color(0xFF64748B).withOpacity(0.5),
+                        size: 32,
+                      ),
                       const SizedBox(height: 8),
-                      const Text("No custom categories yet", style: TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
+                      const Text(
+                        "No custom categories yet",
+                        style: TextStyle(
+                          color: Color(0xFF64748B),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ],
                   ),
                 )
               else
-                 ...customCategories.map((c) => _CategoryListTile(
+                ...customCategories.map(
+                  (c) => _CategoryListTile(
                     category: c.name,
                     total: _getCategoryTotal(c.name),
                     isCustom: true,
-                  )),
+                  ),
+                ),
 
               const SizedBox(height: 60),
             ],
@@ -1864,7 +2193,11 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
     );
   }
 
-  Widget _CategoryListTile({required String category, required double total, bool isCustom = false}) {
+  Widget _CategoryListTile({
+    required String category,
+    required double total,
+    bool isCustom = false,
+  }) {
     final textDark = const Color(0xFF0F172A);
     final muted = const Color(0xFF64748B);
 
@@ -1876,7 +2209,9 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
           width: 44,
           height: 44,
           decoration: BoxDecoration(
-            color: isCustom ? Colors.purple.withOpacity(0.1) : const Color(0xFFEFF2F6),
+            color: isCustom
+                ? Colors.purple.withOpacity(0.1)
+                : const Color(0xFFEFF2F6),
             borderRadius: BorderRadius.circular(12),
           ),
           child: Icon(
@@ -1884,14 +2219,34 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
             color: isCustom ? Colors.purple : const Color(0xFF334155),
           ),
         ),
-        title: Text(category, style: TextStyle(fontWeight: FontWeight.w900, color: textDark)),
-        subtitle: Text(isCustom ? "Custom Rule" : "Standard", style: TextStyle(fontWeight: FontWeight.w600, color: muted, fontSize: 12)),
+        title: Text(
+          category,
+          style: TextStyle(fontWeight: FontWeight.w900, color: textDark),
+        ),
+        subtitle: Text(
+          isCustom ? "Custom Rule" : "Standard",
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            color: muted,
+            fontSize: 12,
+          ),
+        ),
         trailing: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            Text("\$${total.toStringAsFixed(2)}", style: TextStyle(fontWeight: FontWeight.w900, color: textDark, fontSize: 16)),
-            const Text("This Month", style: TextStyle(fontSize: 10, color: Colors.grey)),
+            Text(
+              "\$${total.toStringAsFixed(2)}",
+              style: TextStyle(
+                fontWeight: FontWeight.w900,
+                color: textDark,
+                fontSize: 16,
+              ),
+            ),
+            const Text(
+              "This Month",
+              style: TextStyle(fontSize: 10, color: Colors.grey),
+            ),
           ],
         ),
       ),
@@ -1899,11 +2254,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
   }
 }
 
-
-
-
-
-// Below is the code for settings screen 
+// Below is the code for settings screen
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -1946,7 +2297,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       color: const Color(0xFFEFF2F6),
                       borderRadius: BorderRadius.circular(999),
                     ),
-                    child: const Icon(Icons.arrow_back, color: Color(0xFF334155)),
+                    child: const Icon(
+                      Icons.arrow_back,
+                      color: Color(0xFF334155),
+                    ),
                   ),
                 ),
                 const Spacer(),
@@ -1978,7 +2332,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   onTap: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => const SelectAccountScreen()),
+                      MaterialPageRoute(
+                        builder: (_) => const SelectAccountScreen(),
+                      ),
                     );
                   },
                 ),
@@ -1990,7 +2346,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   onTap: () {
                     // Later: open bank-linking flow
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text("Connect bank flow later (backend).")),
+                      const SnackBar(
+                        content: Text("Connect bank flow later (backend)."),
+                      ),
                     );
                   },
                 ),
@@ -2014,7 +2372,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => const _SimplePlaceholderPage(title: "Categories"),
+                        builder: (_) =>
+                            const _SimplePlaceholderPage(title: "Categories"),
                       ),
                     );
                   },
@@ -2029,7 +2388,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => const _SimplePlaceholderPage(title: "Budgets"),
+                        builder: (_) =>
+                            const _SimplePlaceholderPage(title: "Budgets"),
                       ),
                     );
                   },
@@ -2090,7 +2450,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   onTap: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => const ReceiptScanScreen()),
+                      MaterialPageRoute(
+                        builder: (_) => const ReceiptScanScreen(),
+                      ),
                     );
                   },
                 ),
@@ -2104,7 +2466,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   onTap: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => const AccountAggregatorScreen()),
+                      MaterialPageRoute(
+                        builder: (_) => const AccountAggregatorScreen(),
+                      ),
                     );
                   },
                 ),
@@ -2127,7 +2491,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   onTap: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => const MockTriggerScreen()),
+                      MaterialPageRoute(
+                        builder: (_) => const MockTriggerScreen(),
+                      ),
                     );
                   },
                 ),
@@ -2140,7 +2506,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   onTap: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => const LearnedMerchantsScreen()),
+                      MaterialPageRoute(
+                        builder: (_) => const LearnedMerchantsScreen(),
+                      ),
                     );
                   },
                 ),
@@ -2153,7 +2521,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   onTap: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => const DetectionSettingsScreen()),
+                      MaterialPageRoute(
+                        builder: (_) => const DetectionSettingsScreen(),
+                      ),
                     );
                   },
                 ),
@@ -2215,11 +2585,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
           children: [
             const Padding(
               padding: EdgeInsets.fromLTRB(18, 10, 18, 8),
-              child: Text("App Theme", style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+              child: Text(
+                "App Theme",
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+              ),
             ),
             for (final opt in options)
               ListTile(
-                title: Text(opt, style: const TextStyle(fontWeight: FontWeight.w700)),
+                title: Text(
+                  opt,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
                 trailing: opt == current ? const Icon(Icons.check) : null,
                 onTap: () => Navigator.pop(context, opt),
               ),
@@ -2237,9 +2613,10 @@ class SelectAccountScreen extends StatefulWidget {
   State<SelectAccountScreen> createState() => _SelectAccountScreenState();
 }
 
-class _SelectAccountScreenState extends State<SelectAccountScreen> with SingleTickerProviderStateMixin {
-    int selectedIndex = 0;
-  
+class _SelectAccountScreenState extends State<SelectAccountScreen>
+    with SingleTickerProviderStateMixin {
+  int selectedIndex = 0;
+
   // Stats/Insights State
   int rangeIndex = 0;
   int? selectedBarIndex;
@@ -2255,7 +2632,9 @@ class _SelectAccountScreenState extends State<SelectAccountScreen> with SingleTi
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _tabController.addListener(() { if (mounted) setState(() {}); });
+    _tabController.addListener(() {
+      if (mounted) setState(() {});
+    });
     _budgetsStream = ServiceInitializer.database.budgetDao.watchAllBudgets();
     _budgetsStream.listen(_updateBudgetSpending);
     // Load accounts when screen opens
@@ -2266,7 +2645,8 @@ class _SelectAccountScreenState extends State<SelectAccountScreen> with SingleTi
   }
 
   Future<void> _loadSpendingData() async {
-    final totals = await ServiceInitializer.transactions.getSpendingByCategoryAsync();
+    final totals = await ServiceInitializer.transactions
+        .getSpendingByCategoryAsync();
     if (mounted) {
       setState(() {
         _categorySpending = totals;
@@ -2276,11 +2656,12 @@ class _SelectAccountScreenState extends State<SelectAccountScreen> with SingleTi
   }
 
   Future<void> _updateBudgetSpending(List<Budget> budgets) async {
-     final spending = <int, double>{};
-     for (final b in budgets) {
-       spending[b.id] = await ServiceInitializer.database.budgetDao.getBudgetSpending(b.id, DateTime.now());
-     }
-     if (mounted) setState(() => _budgetSpending = spending);
+    final spending = <int, double>{};
+    for (final b in budgets) {
+      spending[b.id] = await ServiceInitializer.database.budgetDao
+          .getBudgetSpending(b.id, DateTime.now());
+    }
+    if (mounted) setState(() => _budgetSpending = spending);
   }
 
   @override
@@ -2292,11 +2673,17 @@ class _SelectAccountScreenState extends State<SelectAccountScreen> with SingleTi
   @override
   Widget build(BuildContext context) {
     final teal = const Color(0xFF29D6C7);
-    
+
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
-        title: const Text("Insights", style: TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+        title: const Text(
+          "Insights",
+          style: TextStyle(
+            fontWeight: FontWeight.w900,
+            color: Color(0xFF0F172A),
+          ),
+        ),
         backgroundColor: Colors.white,
         elevation: 0,
         bottom: TabBar(
@@ -2315,26 +2702,23 @@ class _SelectAccountScreenState extends State<SelectAccountScreen> with SingleTi
             icon: const Icon(Icons.category_rounded, color: Color(0xFF64748B)),
             tooltip: "Manage Categories",
             onPressed: () => Navigator.push(
-              context, 
-              MaterialPageRoute(builder: (_) => const CategoriesScreen())
+              context,
+              MaterialPageRoute(builder: (_) => const CategoriesScreen()),
             ),
-          )
+          ),
         ],
       ),
       body: TabBarView(
         controller: _tabController,
-        children: [
-          _buildSpendingView(),
-          _buildBudgetsView(),
-        ],
+        children: [_buildSpendingView(), _buildBudgetsView()],
       ),
-      floatingActionButton: _tabController.index == 1 
-        ? FloatingActionButton(
-            backgroundColor: teal,
-            child: const Icon(Icons.add),
-            onPressed: () => _showAddBudgetDialog(),
-          )
-        : null,
+      floatingActionButton: _tabController.index == 1
+          ? FloatingActionButton(
+              backgroundColor: teal,
+              child: const Icon(Icons.add),
+              onPressed: () => _showAddBudgetDialog(),
+            )
+          : null,
     );
   }
 
@@ -2342,8 +2726,9 @@ class _SelectAccountScreenState extends State<SelectAccountScreen> with SingleTi
     return StreamBuilder<List<Budget>>(
       stream: _budgetsStream,
       builder: (context, snapshot) {
-        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-        
+        if (!snapshot.hasData)
+          return const Center(child: CircularProgressIndicator());
+
         final budgets = snapshot.data!;
         if (budgets.isEmpty) {
           return Center(
@@ -2352,9 +2737,18 @@ class _SelectAccountScreenState extends State<SelectAccountScreen> with SingleTi
               children: [
                 Icon(Icons.savings_outlined, size: 48, color: Colors.grey[400]),
                 const SizedBox(height: 16),
-                Text("No budgets set", style: TextStyle(color: Colors.grey[600], fontWeight: FontWeight.bold)),
+                Text(
+                  "No budgets set",
+                  style: TextStyle(
+                    color: Colors.grey[600],
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 const SizedBox(height: 8),
-                Text("Tap + to creates one", style: TextStyle(color: Colors.grey[500])),
+                Text(
+                  "Tap + to creates one",
+                  style: TextStyle(color: Colors.grey[500]),
+                ),
               ],
             ),
           );
@@ -2381,18 +2775,28 @@ class _SelectAccountScreenState extends State<SelectAccountScreen> with SingleTi
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          budget.category, 
-                          style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)
+                          budget.category,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 16,
+                          ),
                         ),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.grey[100],
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
                             budget.period.toUpperCase(),
-                            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey),
+                            style: const TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.grey,
+                            ),
                           ),
                         ),
                       ],
@@ -2411,15 +2815,20 @@ class _SelectAccountScreenState extends State<SelectAccountScreen> with SingleTi
                       children: [
                         Text(
                           "spent \$${spent.toStringAsFixed(0)}",
-                          style: TextStyle(color: Colors.grey[600], fontWeight: FontWeight.w600),
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                         Text(
-                          isExceeded 
-                            ? "Over by \$${(spent - budget.amount).toStringAsFixed(0)}"
-                            : "left \$${remaining.toStringAsFixed(0)}",
+                          isExceeded
+                              ? "Over by \$${(spent - budget.amount).toStringAsFixed(0)}"
+                              : "left \$${remaining.toStringAsFixed(0)}",
                           style: TextStyle(
-                            color: isExceeded ? Colors.red : const Color(0xFF0F172A), 
-                            fontWeight: FontWeight.w900
+                            color: isExceeded
+                                ? Colors.red
+                                : const Color(0xFF0F172A),
+                            fontWeight: FontWeight.w900,
                           ),
                         ),
                       ],
@@ -2460,23 +2869,38 @@ class _SelectAccountScreenState extends State<SelectAccountScreen> with SingleTi
               DropdownButtonFormField<String>(
                 value: category,
                 decoration: const InputDecoration(labelText: "Category"),
-                items: ["Food", "Transport", "Shopping", "Entertainment", "Utilities", "Health"]
-                    .map((c) => DropdownMenuItem(value: c, child: Text(c)))
-                    .toList(),
+                items:
+                    [
+                          "Food",
+                          "Transport",
+                          "Shopping",
+                          "Entertainment",
+                          "Utilities",
+                          "Health",
+                        ]
+                        .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                        .toList(),
                 onChanged: (v) => category = v!,
               ),
               TextFormField(
                 initialValue: "500",
                 decoration: const InputDecoration(labelText: "Limit Amount"),
                 keyboardType: TextInputType.number,
-                validator: (v) => (double.tryParse(v ?? "") ?? 0) > 0 ? null : "Enter valid amount",
+                validator: (v) => (double.tryParse(v ?? "") ?? 0) > 0
+                    ? null
+                    : "Enter valid amount",
                 onSaved: (v) => amount = double.parse(v!),
               ),
               DropdownButtonFormField<String>(
                 value: period,
                 decoration: const InputDecoration(labelText: "Period"),
                 items: ["weekly", "monthly"]
-                    .map((p) => DropdownMenuItem(value: p, child: Text(p.toUpperCase())))
+                    .map(
+                      (p) => DropdownMenuItem(
+                        value: p,
+                        child: Text(p.toUpperCase()),
+                      ),
+                    )
                     .toList(),
                 onChanged: (v) => period = v!,
               ),
@@ -2522,42 +2946,50 @@ class _SelectAccountScreenState extends State<SelectAccountScreen> with SingleTi
               border: Border.all(color: const Color(0xFFE2E8F0)),
             ),
             child: Row(
-              children: ["Daily", "Weekly", "Monthly", "Yearly"].asMap().entries.map((e) {
-                final i = e.key;
-                final label = e.value;
-                final active = i == rangeIndex;
-                return Expanded(
-                  child: GestureDetector(
-                    onTap: () => setState(() {
-                      rangeIndex = i;
-                      selectedBarIndex = null;
-                      selectedSingleDate = null;
-                      selectedRange = null;
-                    }),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      alignment: Alignment.center,
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      decoration: BoxDecoration(
-                        color: active ? const Color(0xFF0F172A) : Colors.transparent,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        label,
-                        style: TextStyle(
-                          color: active ? Colors.white : const Color(0xFF64748B),
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
+              children: ["Daily", "Weekly", "Monthly", "Yearly"]
+                  .asMap()
+                  .entries
+                  .map((e) {
+                    final i = e.key;
+                    final label = e.value;
+                    final active = i == rangeIndex;
+                    return Expanded(
+                      child: GestureDetector(
+                        onTap: () => setState(() {
+                          rangeIndex = i;
+                          selectedBarIndex = null;
+                          selectedSingleDate = null;
+                          selectedRange = null;
+                        }),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          alignment: Alignment.center,
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          decoration: BoxDecoration(
+                            color: active
+                                ? const Color(0xFF0F172A)
+                                : Colors.transparent,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            label,
+                            style: TextStyle(
+                              color: active
+                                  ? Colors.white
+                                  : const Color(0xFF64748B),
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
                         ),
                       ),
-                    ),
-                  ),
-                );
-              }).toList(),
+                    );
+                  })
+                  .toList(),
             ),
           ),
           const SizedBox(height: 18),
-          
+
           // Total Spent Header (using real data calc or mock for now)
           _AccountSpendingHeader(
             total: _categorySpending.values.fold(0.0, (a, b) => a + b),
@@ -2569,39 +3001,63 @@ class _SelectAccountScreenState extends State<SelectAccountScreen> with SingleTi
           SizedBox(
             height: 220,
             child: SpendingTrendChart(
-              dailySpends: const [120, 140, 80, 200, 320, 150, 90], // Placeholder
+              dailySpends: const [
+                120,
+                140,
+                80,
+                200,
+                320,
+                150,
+                90,
+              ], // Placeholder
               labels: const ["M", "T", "W", "T", "F", "S", "S"],
               title: "Category Trend",
             ),
           ),
-          
+
           const SizedBox(height: 24),
-          
+
           // Category Breakdown (Real Data)
           Row(
             children: [
-              Text("Top Categories", style: TextStyle(color: const Color(0xFF64748B), fontWeight: FontWeight.w900, fontSize: 13, letterSpacing: 1.1)),
+              Text(
+                "Top Categories",
+                style: TextStyle(
+                  color: const Color(0xFF64748B),
+                  fontWeight: FontWeight.w900,
+                  fontSize: 13,
+                  letterSpacing: 1.1,
+                ),
+              ),
               const Spacer(),
             ],
           ),
           const SizedBox(height: 12),
-          
+
           if (_categorySpending.isEmpty)
-             const Padding(
-               padding: EdgeInsets.all(20),
-               child: Text("No spending data yet", style: TextStyle(color: Colors.grey)),
-             )
-          else
-            ..._categorySpending.entries.map((e) => Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: _CategoryRow(
-                category: e.key,
-                amount: e.value,
-                percent: e.value / (_categorySpending.values.fold(0.0, (a, b) => a + b)),
-                color: Colors.primaries[e.key.hashCode % Colors.primaries.length],
+            const Padding(
+              padding: EdgeInsets.all(20),
+              child: Text(
+                "No spending data yet",
+                style: TextStyle(color: Colors.grey),
               ),
-            )),
-            
+            )
+          else
+            ..._categorySpending.entries.map(
+              (e) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _CategoryRow(
+                  category: e.key,
+                  amount: e.value,
+                  percent:
+                      e.value /
+                      (_categorySpending.values.fold(0.0, (a, b) => a + b)),
+                  color: Colors
+                      .primaries[e.key.hashCode % Colors.primaries.length],
+                ),
+              ),
+            ),
+
           const SizedBox(height: 48),
         ],
       ),
@@ -2609,30 +3065,48 @@ class _SelectAccountScreenState extends State<SelectAccountScreen> with SingleTi
   }
 
   // Helper widgets for Spending View
-  Widget _CategoryRow({required String category, required double amount, required double percent, required Color color}) {
+  Widget _CategoryRow({
+    required String category,
+    required double amount,
+    required double percent,
+    required Color color,
+  }) {
     return Card(
       child: Padding(
-         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-         child: Row(
-           children: [
-             Container(
-               width: 12, height: 12,
-               decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-             ),
-             const SizedBox(width: 12),
-             Expanded(
-               child: Text(category, style: const TextStyle(fontWeight: FontWeight.bold)),
-             ),
-             Text("\$${amount.toStringAsFixed(2)}", style: const TextStyle(fontWeight: FontWeight.w900)),
-             const SizedBox(width: 8),
-             Text("(${(percent * 100).toStringAsFixed(0)}%)", style: const TextStyle(color: Colors.grey, fontSize: 12)),
-           ],
-         ),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            Container(
+              width: 12,
+              height: 12,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                category,
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+            Text(
+              "\$${amount.toStringAsFixed(2)}",
+              style: const TextStyle(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              "(${(percent * 100).toStringAsFixed(0)}%)",
+              style: const TextStyle(color: Colors.grey, fontSize: 12),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Future<void> _showAddAccountSheet(BuildContext context, {BankAccount? account}) async {
+  Future<void> _showAddAccountSheet(
+    BuildContext context, {
+    BankAccount? account,
+  }) async {
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -2642,8 +3116,6 @@ class _SelectAccountScreenState extends State<SelectAccountScreen> with SingleTi
     );
   }
 }
-
-
 
 class _BankFormSheet extends StatefulWidget {
   final BankAccount? account;
@@ -2668,21 +3140,28 @@ class _BankFormSheetState extends State<_BankFormSheet> {
       selectedBank = IndianBanks.getById(acc.institutionId);
       _accountNameController = TextEditingController(text: acc.accountName);
       _balanceController = TextEditingController(text: acc.balance.toString());
-      _maskedNumberController = TextEditingController(text: acc.maskedNumber.replaceAll("•••• ", ""));
+      _maskedNumberController = TextEditingController(
+        text: acc.maskedNumber.replaceAll("•••• ", ""),
+      );
     } else {
       _accountNameController = TextEditingController();
       _balanceController = TextEditingController();
       _maskedNumberController = TextEditingController(text: "•••• ");
     }
   }
-  
+
   Future<void> _submit() async {
     if (selectedBank == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please select a bank first")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Please select a bank first")),
+      );
       return;
     }
-    if (_accountNameController.text.isEmpty || _balanceController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please fill in all fields")));
+    if (_accountNameController.text.isEmpty ||
+        _balanceController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Please fill in all fields")),
+      );
       return;
     }
 
@@ -2694,7 +3173,10 @@ class _BankFormSheetState extends State<_BankFormSheet> {
 
       final balance = double.tryParse(_balanceController.text) ?? 0.0;
       // Ensure masked number has dots
-      var masked = _maskedNumberController.text.replaceAll(RegExp(r'[^0-9]'), '');
+      var masked = _maskedNumberController.text.replaceAll(
+        RegExp(r'[^0-9]'),
+        '',
+      );
       if (!masked.startsWith("••••")) masked = "•••• $masked";
 
       if (isEdit) {
@@ -2720,14 +3202,18 @@ class _BankFormSheetState extends State<_BankFormSheet> {
       if (mounted && success) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(isEdit ? "Account updated!" : "Account connected successfully!")),
+          SnackBar(
+            content: Text(
+              isEdit ? "Account updated!" : "Account connected successfully!",
+            ),
+          ),
         );
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
-  
+
   @override
   void dispose() {
     _accountNameController.dispose();
@@ -2754,15 +3240,35 @@ class _BankFormSheetState extends State<_BankFormSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(isEdit ? "Edit Account" : "Connect Bank Account", style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: textDark)),
+          Text(
+            isEdit ? "Edit Account" : "Connect Bank Account",
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
+              color: textDark,
+            ),
+          ),
           const SizedBox(height: 8),
-          Text(isEdit ? "Update account details." : "Select your bank to link securely.", style: TextStyle(color: muted, fontWeight: FontWeight.w600)),
-          
+          Text(
+            isEdit
+                ? "Update account details."
+                : "Select your bank to link securely.",
+            style: TextStyle(color: muted, fontWeight: FontWeight.w600),
+          ),
+
           const SizedBox(height: 24),
 
           // Bank Selector
           if (selectedBank == null) ...[
-            Text("Popular Banks", style: TextStyle(color: muted, fontWeight: FontWeight.w800, fontSize: 13, letterSpacing: 1.1)),
+            Text(
+              "Popular Banks",
+              style: TextStyle(
+                color: muted,
+                fontWeight: FontWeight.w800,
+                fontSize: 13,
+                letterSpacing: 1.1,
+              ),
+            ),
             const SizedBox(height: 12),
             SizedBox(
               height: 200,
@@ -2790,12 +3296,20 @@ class _BankFormSheetState extends State<_BankFormSheet> {
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.account_balance, color: Color(bank.color), size: 28),
+                          Icon(
+                            Icons.account_balance,
+                            color: Color(bank.color),
+                            size: 28,
+                          ),
                           const SizedBox(height: 8),
                           Text(
                             bank.name,
                             textAlign: TextAlign.center,
-                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: textDark),
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: textDark,
+                            ),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -2809,7 +3323,7 @@ class _BankFormSheetState extends State<_BankFormSheet> {
             Center(
               child: TextButton(
                 onPressed: () {
-                   showModalBottomSheet(
+                  showModalBottomSheet(
                     context: context,
                     showDragHandle: true,
                     isScrollControlled: true,
@@ -2823,14 +3337,25 @@ class _BankFormSheetState extends State<_BankFormSheet> {
                         children: [
                           Padding(
                             padding: const EdgeInsets.all(16.0),
-                            child: Text("Select Bank", style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: textDark)),
+                            child: Text(
+                              "Select Bank",
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w900,
+                                color: textDark,
+                              ),
+                            ),
                           ),
                           Expanded(
                             child: ListView.separated(
                               controller: controller,
-                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 20,
+                                vertical: 10,
+                              ),
                               itemCount: IndianBanks.banks.length,
-                              separatorBuilder: (_, __) => const Divider(height: 1),
+                              separatorBuilder: (_, __) =>
+                                  const Divider(height: 1),
                               itemBuilder: (_, i) {
                                 final bank = IndianBanks.banks[i];
                                 return ListTile(
@@ -2842,14 +3367,25 @@ class _BankFormSheetState extends State<_BankFormSheet> {
                                       color: Color(bank.color).withOpacity(0.1),
                                       borderRadius: BorderRadius.circular(12),
                                     ),
-                                    child: Icon(Icons.account_balance, color: Color(bank.color), size: 20),
+                                    child: Icon(
+                                      Icons.account_balance,
+                                      color: Color(bank.color),
+                                      size: 20,
+                                    ),
                                   ),
-                                  title: Text(bank.name, style: TextStyle(fontWeight: FontWeight.w700, color: textDark)),
+                                  title: Text(
+                                    bank.name,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      color: textDark,
+                                    ),
+                                  ),
                                   onTap: () {
                                     Navigator.pop(ctx);
                                     setState(() {
                                       selectedBank = bank;
-                                      _accountNameController.text = "${bank.name} Checking";
+                                      _accountNameController.text =
+                                          "${bank.name} Checking";
                                     });
                                   },
                                 );
@@ -2861,7 +3397,10 @@ class _BankFormSheetState extends State<_BankFormSheet> {
                     ),
                   );
                 },
-                child: Text("View All Banks", style: TextStyle(color: teal, fontWeight: FontWeight.w800)),
+                child: Text(
+                  "View All Banks",
+                  style: TextStyle(color: teal, fontWeight: FontWeight.w800),
+                ),
               ),
             ),
           ] else ...[
@@ -2871,13 +3410,21 @@ class _BankFormSheetState extends State<_BankFormSheet> {
               decoration: BoxDecoration(
                 color: Color(selectedBank!.color).withOpacity(0.1),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Color(selectedBank!.color).withOpacity(0.2)),
+                border: Border.all(
+                  color: Color(selectedBank!.color).withOpacity(0.2),
+                ),
               ),
               child: Row(
                 children: [
-                  Icon(Icons.account_balance, color: Color(selectedBank!.color)),
+                  Icon(
+                    Icons.account_balance,
+                    color: Color(selectedBank!.color),
+                  ),
                   const SizedBox(width: 12),
-                  Text(selectedBank!.name, style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+                  Text(
+                    selectedBank!.name,
+                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+                  ),
                   const Spacer(),
                   IconButton(
                     icon: const Icon(Icons.change_circle_outlined),
@@ -2886,41 +3433,47 @@ class _BankFormSheetState extends State<_BankFormSheet> {
                 ],
               ),
             ),
-            
+
             const SizedBox(height: 16),
-            
+
             TextField(
               controller: _accountNameController,
               decoration: InputDecoration(
                 labelText: "Account Name",
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
             ),
-            
+
             const SizedBox(height: 12),
-            
+
             TextField(
               controller: _balanceController,
               keyboardType: TextInputType.number,
               decoration: InputDecoration(
                 labelText: "Current Balance (₹)",
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
             ),
-            
+
             const SizedBox(height: 12),
-            
+
             TextField(
               controller: _maskedNumberController,
               keyboardType: TextInputType.number,
               decoration: InputDecoration(
                 labelText: "Last 4 digits",
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
             ),
-            
+
             const SizedBox(height: 24),
-            
+
             SizedBox(
               width: double.infinity,
               height: 52,
@@ -2929,19 +3482,29 @@ class _BankFormSheetState extends State<_BankFormSheet> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: teal,
                   foregroundColor: Colors.black,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
                 ),
                 child: _isLoading
                     ? const SizedBox(
                         width: 24,
                         height: 24,
-                        child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.black),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.5,
+                          color: Colors.black,
+                        ),
                       )
-                    : Text(isEdit ? "Update Account" : "Securely Connect", style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+                    : Text(
+                        isEdit ? "Update Account" : "Securely Connect",
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 16,
+                        ),
+                      ),
               ),
             ),
           ],
-
 
           const SizedBox(height: 30),
         ],
@@ -2949,8 +3512,6 @@ class _BankFormSheetState extends State<_BankFormSheet> {
     );
   }
 }
-
-
 
 class _SettingsSectionTitle extends StatelessWidget {
   final String text;
@@ -3021,10 +3582,7 @@ class _SettingsNavTile extends StatelessWidget {
       ),
       title: Text(
         title,
-        style: TextStyle(
-          color: textDark,
-          fontWeight: FontWeight.w900,
-        ),
+        style: TextStyle(color: textDark, fontWeight: FontWeight.w900),
       ),
       subtitle: subtitle == null
           ? null
@@ -3090,10 +3648,7 @@ class _SettingsSwitchTile extends StatelessWidget {
       ),
       title: Text(
         title,
-        style: TextStyle(
-          color: textDark,
-          fontWeight: FontWeight.w900,
-        ),
+        style: TextStyle(color: textDark, fontWeight: FontWeight.w900),
       ),
       subtitle: subtitle == null
           ? null
@@ -3101,10 +3656,7 @@ class _SettingsSwitchTile extends StatelessWidget {
               subtitle!,
               style: TextStyle(color: muted, fontWeight: FontWeight.w600),
             ),
-      trailing: Switch(
-        value: value,
-        onChanged: onChanged,
-      ),
+      trailing: Switch(value: value, onChanged: onChanged),
     );
   }
 }
@@ -3136,7 +3688,10 @@ class _SimplePlaceholderPage extends StatelessWidget {
                         color: const Color(0xFFEFF2F6),
                         borderRadius: BorderRadius.circular(999),
                       ),
-                      child: const Icon(Icons.arrow_back, color: Color(0xFF334155)),
+                      child: const Icon(
+                        Icons.arrow_back,
+                        color: Color(0xFF334155),
+                      ),
                     ),
                   ),
                   const Spacer(),
@@ -3166,10 +3721,6 @@ class _SimplePlaceholderPage extends StatelessWidget {
   }
 }
 
-
-
-
-
 // Below is the code for stats screen
 class StatsScreen extends StatefulWidget {
   const StatsScreen({super.key});
@@ -3178,20 +3729,21 @@ class StatsScreen extends StatefulWidget {
   State<StatsScreen> createState() => _StatsScreenState();
 }
 
-class _StatsScreenState extends State<StatsScreen> with SingleTickerProviderStateMixin {
+class _StatsScreenState extends State<StatsScreen>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  
+
   // Time range tabs like the reference
   int rangeIndex = 2; // 0 Daily, 1 Weekly, 2 Monthly, 3 Yearly
   int? selectedBarIndex; // interactive selection
   String selectedMainCategory = "All";
-  String? selectedSubCategory; 
+  String? selectedSubCategory;
   DateTimeRange? selectedRange;
   DateTime? selectedSingleDate;
-  
+
   // Data for charts
   Map<String, double> _categorySpending = {};
-  
+
   // Budgets
   Stream<List<Budget>>? _budgetsStream;
   Map<int, double> _budgetSpending = {}; // budgetId -> spent amount
@@ -3205,15 +3757,17 @@ class _StatsScreenState extends State<StatsScreen> with SingleTickerProviderStat
   }
 
   Future<void> _loadSpendingData() async {
-    final cats = await ServiceInitializer.transactions.getSpendingByCategoryAsync();
+    final cats = await ServiceInitializer.transactions
+        .getSpendingByCategoryAsync();
     // Also load spending for each budget
     final budgets = await ServiceInitializer.database.budgetDao.getAllBudgets();
     final budgetSpends = <int, double>{};
-    
+
     for (final b in budgets) {
       // Calculate spending for this budget's category in the current month (simplified for now)
       // Ideally this should use BudgetDao to calculate current usage based on period
-      final spent = await ServiceInitializer.database.budgetDao.getBudgetSpending(b.id, DateTime.now());
+      final spent = await ServiceInitializer.database.budgetDao
+          .getBudgetSpending(b.id, DateTime.now());
       budgetSpends[b.id] = spent;
     }
 
@@ -3253,88 +3807,105 @@ class _StatsScreenState extends State<StatsScreen> with SingleTickerProviderStat
       icon: Icons.notifications_active_rounded,
       iconBg: Color(0xFFE8F0FF),
       iconColor: Color(0xFF3B82F6),
-      title: "Subscription Alert: Netflix increased by \$2.00 starting next cycle.",
+      title:
+          "Subscription Alert: Netflix increased by \$2.00 starting next cycle.",
       subtitle: "Detected in your recurring payments.",
     ),
   ];
   String get _rangeLabel {
-  if (selectedRange != null) return "${_fmt(selectedRange!.start)} - ${_fmt(selectedRange!.end)}";
-  if (selectedSingleDate != null) return _fmt(selectedSingleDate!);
-  return switch (rangeIndex) {
-    0 => "Daily",
-    1 => "Weekly",
-    2 => "Monthly",
-    _ => "Yearly",
-  };
-}
-
-// Mock generator (replace with backend later)
-// Generates 12 points by default for the selected rangeIndex
-List<_TimePoint> _buildSeriesFor({
-  required String mainCategory,
-  String? subCategory,
-}) {
-  final r = _effectiveRange();
-
-  // Decide bucket count based on rangeIndex or selectedRange size
-  final days = r.end.difference(r.start).inDays + 1;
-
-  int buckets;
-  if (selectedRange != null || selectedSingleDate != null) {
-    // if user picked range, choose “nice” buckets
-    buckets = days <= 10 ? days : (days <= 35 ? 12 : 12);
-  } else {
-    buckets = switch (rangeIndex) {
-      0 => 7,   // daily default
-      1 => 8,   // weekly-ish bars
-      2 => 12,  // monthly bars
-      _ => 12,  // yearly months
+    if (selectedRange != null)
+      return "${_fmt(selectedRange!.start)} - ${_fmt(selectedRange!.end)}";
+    if (selectedSingleDate != null) return _fmt(selectedSingleDate!);
+    return switch (rangeIndex) {
+      0 => "Daily",
+      1 => "Weekly",
+      2 => "Monthly",
+      _ => "Yearly",
     };
   }
 
-  // Base values from category (fallback to All)
-  final baseValues = seriesByMainCategory[mainCategory] ?? seriesByMainCategory["All"]!;
-  // Use a repeat pattern so any bucket count works
-  double v(int i) => baseValues[i % baseValues.length];
-
-  // If subCategory is selected, shrink values a bit (mock behavior)
-  final subFactor = (subCategory == null) ? 1.0 : 0.55;
-
-  // Build buckets
-  return List.generate(buckets, (i) {
-    final start = DateTime.fromMillisecondsSinceEpoch(
-      r.start.millisecondsSinceEpoch +
-          ((r.end.millisecondsSinceEpoch - r.start.millisecondsSinceEpoch) * i ~/ buckets),
-    );
-    final end = DateTime.fromMillisecondsSinceEpoch(
-      r.start.millisecondsSinceEpoch +
-          ((r.end.millisecondsSinceEpoch - r.start.millisecondsSinceEpoch) * (i + 1) ~/ buckets) -
-          1,
-    );
-
-    final label = switch (rangeIndex) {
-      0 => "${start.day}",
-      1 => "W${i + 1}",
-      2 => "${start.month}/${start.day}",
-      _ => ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][start.month - 1],
-    };
-
-    return _TimePoint(
-      label: label,
-      start: start,
-      end: end,
-      amount: v(i) * subFactor,
-    );
-  });
-}
-
-
-  double _totalSpent(List<_TimePoint> pts) => pts.fold(0.0, (a, b) => a + b.amount);
-
-  Widget _TotalSpentHeader({
-    required double total,
-    required String category,
+  // Mock generator (replace with backend later)
+  // Generates 12 points by default for the selected rangeIndex
+  List<_TimePoint> _buildSeriesFor({
+    required String mainCategory,
+    String? subCategory,
   }) {
+    final r = _effectiveRange();
+
+    // Decide bucket count based on rangeIndex or selectedRange size
+    final days = r.end.difference(r.start).inDays + 1;
+
+    int buckets;
+    if (selectedRange != null || selectedSingleDate != null) {
+      // if user picked range, choose “nice” buckets
+      buckets = days <= 10 ? days : (days <= 35 ? 12 : 12);
+    } else {
+      buckets = switch (rangeIndex) {
+        0 => 7, // daily default
+        1 => 8, // weekly-ish bars
+        2 => 12, // monthly bars
+        _ => 12, // yearly months
+      };
+    }
+
+    // Base values from category (fallback to All)
+    final baseValues =
+        seriesByMainCategory[mainCategory] ?? seriesByMainCategory["All"]!;
+    // Use a repeat pattern so any bucket count works
+    double v(int i) => baseValues[i % baseValues.length];
+
+    // If subCategory is selected, shrink values a bit (mock behavior)
+    final subFactor = (subCategory == null) ? 1.0 : 0.55;
+
+    // Build buckets
+    return List.generate(buckets, (i) {
+      final start = DateTime.fromMillisecondsSinceEpoch(
+        r.start.millisecondsSinceEpoch +
+            ((r.end.millisecondsSinceEpoch - r.start.millisecondsSinceEpoch) *
+                i ~/
+                buckets),
+      );
+      final end = DateTime.fromMillisecondsSinceEpoch(
+        r.start.millisecondsSinceEpoch +
+            ((r.end.millisecondsSinceEpoch - r.start.millisecondsSinceEpoch) *
+                (i + 1) ~/
+                buckets) -
+            1,
+      );
+
+      final label = switch (rangeIndex) {
+        0 => "${start.day}",
+        1 => "W${i + 1}",
+        2 => "${start.month}/${start.day}",
+        _ => [
+          "Jan",
+          "Feb",
+          "Mar",
+          "Apr",
+          "May",
+          "Jun",
+          "Jul",
+          "Aug",
+          "Sep",
+          "Oct",
+          "Nov",
+          "Dec",
+        ][start.month - 1],
+      };
+
+      return _TimePoint(
+        label: label,
+        start: start,
+        end: end,
+        amount: v(i) * subFactor,
+      );
+    });
+  }
+
+  double _totalSpent(List<_TimePoint> pts) =>
+      pts.fold(0.0, (a, b) => a + b.amount);
+
+  Widget _TotalSpentHeader({required double total, required String category}) {
     final teal = const Color(0xFF29D6C7);
     final textDark = const Color(0xFF0F172A);
     final muted = const Color(0xFF64748B);
@@ -3386,9 +3957,16 @@ List<_TimePoint> _buildSeriesFor({
               ),
               child: Row(
                 children: const [
-                  Icon(Icons.insights_rounded, size: 18, color: Color(0xFF29D6C7)),
+                  Icon(
+                    Icons.insights_rounded,
+                    size: 18,
+                    color: Color(0xFF29D6C7),
+                  ),
                   SizedBox(width: 8),
-                  Text("Insights", style: TextStyle(fontWeight: FontWeight.w900)),
+                  Text(
+                    "Insights",
+                    style: TextStyle(fontWeight: FontWeight.w900),
+                  ),
                 ],
               ),
             ),
@@ -3415,13 +3993,13 @@ List<_TimePoint> _buildSeriesFor({
 
   // Time-series values (12 points). Interpret based on rangeIndex (Daily/Weekly/Monthly/Yearly).
   final Map<String, List<double>> seriesByMainCategory = const {
-    "All":          [120, 90, 150, 80, 140, 110, 175, 95, 130, 155, 105, 160],
-    "Food & Drinks":[35,  25,  45,  22,  38,  28,  55,  26,  36,  48,  30,  50],
-    "Bills":        [40,  38,  42,  41,  39,  40,  43,  38,  41,  42,  40,  41],
-    "Fuel":         [18,  12,  20,  14,  17,  16,  22,  13,  18,  19,  12,  16],
-    "Shopping":     [22,  15,  28,  12,  25,  18,  30,  20,  26,  29,  16,  27],
-    "Transport":    [15,  10,  18,  9,   14,  12,  19,  11,  16,  18,  10,  15],
-    "Subscriptions":[10,  10,  10,  10,  12,  10,  12,  10,  10,  12,  10,  10],
+    "All": [120, 90, 150, 80, 140, 110, 175, 95, 130, 155, 105, 160],
+    "Food & Drinks": [35, 25, 45, 22, 38, 28, 55, 26, 36, 48, 30, 50],
+    "Bills": [40, 38, 42, 41, 39, 40, 43, 38, 41, 42, 40, 41],
+    "Fuel": [18, 12, 20, 14, 17, 16, 22, 13, 18, 19, 12, 16],
+    "Shopping": [22, 15, 28, 12, 25, 18, 30, 20, 26, 29, 16, 27],
+    "Transport": [15, 10, 18, 9, 14, 12, 19, 11, 16, 18, 10, 15],
+    "Subscriptions": [10, 10, 10, 10, 12, 10, 12, 10, 10, 12, 10, 10],
   };
 
   // Subcategory breakdowns per main category
@@ -3470,17 +4048,21 @@ List<_TimePoint> _buildSeriesFor({
     final teal = const Color(0xFF29D6C7);
     final textDark = const Color(0xFF0F172A);
     final muted = const Color(0xFF64748B);
-    
-    
+
     final points = _buildSeriesFor(
       mainCategory: selectedMainCategory,
       subCategory: selectedSubCategory,
     );
     final total = _totalSpent(points);
 
-    final subSlices = subcatsByMainCategory[selectedMainCategory] ??
+    final subSlices =
+        subcatsByMainCategory[selectedMainCategory] ??
         subcatsByMainCategory["All"]!;
-    final filteredInsights = _filterInsights(insightsData, selectedMainCategory, selectedSubCategory);
+    final filteredInsights = _filterInsights(
+      insightsData,
+      selectedMainCategory,
+      selectedSubCategory,
+    );
 
     return SafeArea(
       child: SingleChildScrollView(
@@ -3547,7 +4129,9 @@ List<_TimePoint> _buildSeriesFor({
                                 const SizedBox(height: 8),
                                 Text(
                                   result.subtitle,
-                                  style: const TextStyle(fontWeight: FontWeight.w600),
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
                                 const SizedBox(height: 10),
                               ],
@@ -3571,7 +4155,6 @@ List<_TimePoint> _buildSeriesFor({
                 selectedBarIndex = null; // ✅ avoid stale highlight
               }),
             ),
-
 
             const SizedBox(height: 14),
 
@@ -3632,8 +4215,8 @@ List<_TimePoint> _buildSeriesFor({
               onSelectCategory: (c) => setState(() {
                 selectedMainCategory = c;
                 filters["Category"] = c;
-                selectedSubCategory = null;     // ✅ reset
-                selectedBarIndex = null;        // ✅ reset
+                selectedSubCategory = null; // ✅ reset
+                selectedBarIndex = null; // ✅ reset
               }),
               onTapBar: (i) async {
                 setState(() => selectedBarIndex = i);
@@ -3653,7 +4236,10 @@ List<_TimePoint> _buildSeriesFor({
                             selectedMainCategory == "All"
                                 ? "Spending"
                                 : "$selectedMainCategory spending",
-                            style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 16,
+                            ),
                           ),
                           const SizedBox(height: 6),
                           Text(
@@ -3666,7 +4252,10 @@ List<_TimePoint> _buildSeriesFor({
                           const SizedBox(height: 12),
                           Text(
                             "\$${p.amount.toStringAsFixed(2)}",
-                            style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 28),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 28,
+                            ),
                           ),
                           const SizedBox(height: 10),
                         ],
@@ -3677,9 +4266,7 @@ List<_TimePoint> _buildSeriesFor({
               },
             ),
 
-
             const SizedBox(height: 16),
-
 
             // ------------------------
             // 2) Sub-category breakdown pie chart (filtered)
@@ -3691,7 +4278,9 @@ List<_TimePoint> _buildSeriesFor({
               subSlices: subSlices,
               selectedSubCategory: selectedSubCategory,
               onSelectSubCategory: (sub) => setState(() {
-                selectedSubCategory = (selectedSubCategory == sub) ? null : sub; // tap again to clear
+                selectedSubCategory = (selectedSubCategory == sub)
+                    ? null
+                    : sub; // tap again to clear
                 selectedBarIndex = null;
               }),
             ),
@@ -3719,7 +4308,6 @@ List<_TimePoint> _buildSeriesFor({
                 ),
               ],
             ),
-
 
             const SizedBox(height: 8),
 
@@ -3765,18 +4353,27 @@ List<_TimePoint> _buildSeriesFor({
       out = out.where((x) {
         final t = (x.title + " " + x.subtitle).toLowerCase();
         final key = main.toLowerCase();
-        if (key.contains("food")) return t.contains("coffee") || t.contains("dining") || t.contains("grocery");
-        if (key.contains("bill") || key.contains("subscription")) return t.contains("subscription") || t.contains("netflix");
-        if (key.contains("transport")) return t.contains("transit") || t.contains("ride");
-        if (key.contains("shopping")) return t.contains("shopping") || t.contains("amazon");
-        if (key.contains("fuel")) return t.contains("fuel") || t.contains("gas");
+        if (key.contains("food"))
+          return t.contains("coffee") ||
+              t.contains("dining") ||
+              t.contains("grocery");
+        if (key.contains("bill") || key.contains("subscription"))
+          return t.contains("subscription") || t.contains("netflix");
+        if (key.contains("transport"))
+          return t.contains("transit") || t.contains("ride");
+        if (key.contains("shopping"))
+          return t.contains("shopping") || t.contains("amazon");
+        if (key.contains("fuel"))
+          return t.contains("fuel") || t.contains("gas");
         return t.contains(key);
       }).toList();
     }
 
     if (sub != null) {
       final sk = sub.toLowerCase();
-      out = out.where((x) => (x.title + " " + x.subtitle).toLowerCase().contains(sk)).toList();
+      out = out
+          .where((x) => (x.title + " " + x.subtitle).toLowerCase().contains(sk))
+          .toList();
     }
 
     return out;
@@ -3841,11 +4438,9 @@ List<_TimePoint> _buildSeriesFor({
 
   Future<void> _pickDateRange() async {
     final now = DateTime.now();
-    final initial = selectedRange ??
-        DateTimeRange(
-          start: DateTime(now.year, now.month, 1),
-          end: now,
-        );
+    final initial =
+        selectedRange ??
+        DateTimeRange(start: DateTime(now.year, now.month, 1), end: now);
 
     final picked = await showDateRangePicker(
       context: context,
@@ -3887,8 +4482,18 @@ List<_TimePoint> _buildSeriesFor({
 
   String _fmt(DateTime d) {
     const months = [
-      "Jan","Feb","Mar","Apr","May","Jun",
-      "Jul","Aug","Sep","Oct","Nov","Dec"
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec",
     ];
     return "${d.day} ${months[d.month - 1]}, ${d.year}";
   }
@@ -3909,13 +4514,25 @@ List<_TimePoint> _buildSeriesFor({
     // defaults based on rangeIndex
     switch (rangeIndex) {
       case 0: // Daily -> last 7 days
-        return DateTimeRange(start: now.subtract(const Duration(days: 6)), end: now);
+        return DateTimeRange(
+          start: now.subtract(const Duration(days: 6)),
+          end: now,
+        );
       case 1: // Weekly -> last 4 weeks
-        return DateTimeRange(start: now.subtract(const Duration(days: 27)), end: now);
+        return DateTimeRange(
+          start: now.subtract(const Duration(days: 27)),
+          end: now,
+        );
       case 2: // Monthly -> last 30 days
-        return DateTimeRange(start: now.subtract(const Duration(days: 29)), end: now);
+        return DateTimeRange(
+          start: now.subtract(const Duration(days: 29)),
+          end: now,
+        );
       default: // Yearly -> last 12 months (approx)
-        return DateTimeRange(start: DateTime(now.year - 1, now.month, now.day), end: now);
+        return DateTimeRange(
+          start: DateTime(now.year - 1, now.month, now.day),
+          end: now,
+        );
     }
   }
 
@@ -3937,12 +4554,18 @@ List<_TimePoint> _buildSeriesFor({
                 padding: const EdgeInsets.fromLTRB(18, 10, 18, 8),
                 child: Text(
                   title,
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
               ),
               for (final opt in options)
                 ListTile(
-                  title: Text(opt, style: const TextStyle(fontWeight: FontWeight.w700)),
+                  title: Text(
+                    opt,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
                   onTap: () => Navigator.pop(context, opt),
                 ),
             ],
@@ -4012,7 +4635,7 @@ class _InteractiveBarChart extends StatelessWidget {
                                       color: teal.withOpacity(0.25),
                                       blurRadius: 10,
                                       offset: const Offset(0, 6),
-                                    )
+                                    ),
                                   ]
                                 : null,
                           ),
@@ -4029,10 +4652,16 @@ class _InteractiveBarChart extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: _sparseLabels(points.map((p) => p.label).toList())
-                .map((t) => Text(
-                      t,
-                      style: TextStyle(color: muted, fontWeight: FontWeight.w800, fontSize: 12),
-                    ))
+                .map(
+                  (t) => Text(
+                    t,
+                    style: TextStyle(
+                      color: muted,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12,
+                    ),
+                  ),
+                )
                 .toList(),
           ),
         ],
@@ -4047,12 +4676,11 @@ class _InteractiveBarChart extends StatelessWidget {
   }
 }
 
-
 class _TimePoint {
-  final String label;   // e.g. "Oct 1" / "W2" / "15"
+  final String label; // e.g. "Oct 1" / "W2" / "15"
   final DateTime start; // start of bucket
-  final DateTime end;   // end of bucket
-  final double amount;  // spent
+  final DateTime end; // end of bucket
+  final double amount; // spent
   const _TimePoint({
     required this.label,
     required this.start,
@@ -4136,11 +4764,16 @@ class _MainCategoryTrendsCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(999),
                     onTap: () => onSelectCategory(c),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
                       decoration: BoxDecoration(
                         color: sel ? teal : Colors.white,
                         borderRadius: BorderRadius.circular(999),
-                        border: Border.all(color: sel ? teal : const Color(0xFFE5E7EB)),
+                        border: Border.all(
+                          color: sel ? teal : const Color(0xFFE5E7EB),
+                        ),
                       ),
                       child: Text(
                         c,
@@ -4174,14 +4807,19 @@ class _MainCategoryTrendsCard extends StatelessWidget {
                         children: List.generate(points.length, (i) {
                           final p = points[i];
                           final sel = selectedBarIndex == i;
-                          final h = (p.amount / (maxV == 0 ? 1 : maxV)).clamp(0.0, 1.0);
+                          final h = (p.amount / (maxV == 0 ? 1 : maxV)).clamp(
+                            0.0,
+                            1.0,
+                          );
 
                           return Expanded(
                             child: GestureDetector(
                               behavior: HitTestBehavior.opaque,
                               onTap: () => onTapBar(i),
                               child: Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 3),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 3,
+                                ),
                                 child: AnimatedContainer(
                                   duration: const Duration(milliseconds: 220),
                                   curve: Curves.easeOut,
@@ -4195,7 +4833,7 @@ class _MainCategoryTrendsCard extends StatelessWidget {
                                               color: teal.withOpacity(0.22),
                                               blurRadius: 10,
                                               offset: const Offset(0, 6),
-                                            )
+                                            ),
                                           ]
                                         : null,
                                   ),
@@ -4213,14 +4851,16 @@ class _MainCategoryTrendsCard extends StatelessWidget {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: _sparseLabels(points.map((p) => p.label).toList())
-                        .map((t) => Text(
-                              t,
-                              style: TextStyle(
-                                color: const Color(0xFF94A3B8),
-                                fontWeight: FontWeight.w800,
-                                fontSize: 12,
-                              ),
-                            ))
+                        .map(
+                          (t) => Text(
+                            t,
+                            style: TextStyle(
+                              color: const Color(0xFF94A3B8),
+                              fontWeight: FontWeight.w800,
+                              fontSize: 12,
+                            ),
+                          ),
+                        )
                         .toList(),
                   ),
                 ],
@@ -4237,7 +4877,6 @@ class _MainCategoryTrendsCard extends StatelessWidget {
     return [full.first, full[full.length ~/ 2], full.last];
   }
 }
-
 
 class _SubSlice {
   final String label;
@@ -4269,7 +4908,9 @@ class _SubcategoryBreakdownCard extends StatelessWidget {
     final textDark = const Color(0xFF0F172A);
 
     // Convert to your existing PieSlice model
-    final slices = subSlices.map((s) => _PieSlice(s.label, s.value, s.color)).toList();
+    final slices = subSlices
+        .map((s) => _PieSlice(s.label, s.value, s.color))
+        .toList();
 
     return Card(
       child: Padding(
@@ -4288,7 +4929,11 @@ class _SubcategoryBreakdownCard extends StatelessWidget {
                   ),
                 ),
                 const Spacer(),
-                const Icon(Icons.info_outline, size: 18, color: Color(0xFF64748B)),
+                const Icon(
+                  Icons.info_outline,
+                  size: 18,
+                  color: Color(0xFF64748B),
+                ),
               ],
             ),
 
@@ -4321,7 +4966,7 @@ class _SubcategoryBreakdownCard extends StatelessWidget {
                         ),
                       ),
                     ],
-                  )
+                  ),
                 ],
               ),
             ),
@@ -4338,11 +4983,16 @@ class _SubcategoryBreakdownCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(999),
                   onTap: () => onSelectSubCategory(s.label),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
                     decoration: BoxDecoration(
                       color: sel ? s.color.withOpacity(0.18) : Colors.white,
                       borderRadius: BorderRadius.circular(999),
-                      border: Border.all(color: sel ? s.color : const Color(0xFFE5E7EB)),
+                      border: Border.all(
+                        color: sel ? s.color : const Color(0xFFE5E7EB),
+                      ),
                     ),
                     child: Text(
                       s.label,
@@ -4358,8 +5008,6 @@ class _SubcategoryBreakdownCard extends StatelessWidget {
     );
   }
 }
-
-
 
 // ----------------- Insights search + card -----------------
 
@@ -4412,10 +5060,7 @@ class _InsightCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 6),
-                  const Text(
-                    "",
-                    style: TextStyle(fontSize: 0),
-                  ),
+                  const Text("", style: TextStyle(fontSize: 0)),
                   Text(
                     data.subtitle,
                     style: const TextStyle(
@@ -4442,29 +5087,36 @@ class _InsightSearchDelegate extends SearchDelegate<_InsightData?> {
 
   @override
   List<Widget>? buildActions(BuildContext context) => [
-        if (query.isNotEmpty)
-          IconButton(
-            icon: const Icon(Icons.clear),
-            onPressed: () => query = "",
-          ),
-      ];
+    if (query.isNotEmpty)
+      IconButton(icon: const Icon(Icons.clear), onPressed: () => query = ""),
+  ];
 
   @override
   Widget? buildLeading(BuildContext context) => IconButton(
-        icon: const Icon(Icons.arrow_back),
-        onPressed: () => close(context, null),
-      );
+    icon: const Icon(Icons.arrow_back),
+    onPressed: () => close(context, null),
+  );
 
   @override
   Widget buildResults(BuildContext context) {
     final results = _filter();
     return ListView(
       children: results
-          .map((x) => ListTile(
-                title: Text(x.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                subtitle: Text(x.subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
-                onTap: () => close(context, x),
-              ))
+          .map(
+            (x) => ListTile(
+              title: Text(
+                x.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              subtitle: Text(
+                x.subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              onTap: () => close(context, x),
+            ),
+          )
           .toList(),
     );
   }
@@ -4474,11 +5126,21 @@ class _InsightSearchDelegate extends SearchDelegate<_InsightData?> {
     final results = _filter();
     return ListView(
       children: results
-          .map((x) => ListTile(
-                title: Text(x.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                subtitle: Text(x.subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
-                onTap: () => close(context, x),
-              ))
+          .map(
+            (x) => ListTile(
+              title: Text(
+                x.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              subtitle: Text(
+                x.subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              onTap: () => close(context, x),
+            ),
+          )
           .toList(),
     );
   }
@@ -4487,9 +5149,11 @@ class _InsightSearchDelegate extends SearchDelegate<_InsightData?> {
     final q = query.trim().toLowerCase();
     if (q.isEmpty) return items;
     return items
-        .where((x) =>
-            x.title.toLowerCase().contains(q) ||
-            x.subtitle.toLowerCase().contains(q))
+        .where(
+          (x) =>
+              x.title.toLowerCase().contains(q) ||
+              x.subtitle.toLowerCase().contains(q),
+        )
         .toList();
   }
 }
@@ -4699,7 +5363,6 @@ class _LegendDot extends StatelessWidget {
   }
 }
 
-
 class _RoundIcon extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
@@ -4755,7 +5418,11 @@ class _AccountChip extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Icon(icon, size: 18, color: selected ? Colors.black : Colors.black87),
+            Icon(
+              icon,
+              size: 18,
+              color: selected ? Colors.black : Colors.black87,
+            ),
             const SizedBox(width: 10),
             Text(
               label,
@@ -4810,7 +5477,10 @@ class CategoryCard extends StatelessWidget {
                 child: Icon(icon, color: iconColor),
               ),
               const Spacer(),
-              Text(title, style: TextStyle(color: muted, fontWeight: FontWeight.w600)),
+              Text(
+                title,
+                style: TextStyle(color: muted, fontWeight: FontWeight.w600),
+              ),
               const SizedBox(height: 6),
               Text(
                 amount,
@@ -4866,14 +5536,19 @@ class TransactionTile extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title,
-                      style: TextStyle(
-                        color: textDark,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 16,
-                      )),
+                  Text(
+                    title,
+                    style: TextStyle(
+                      color: textDark,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 16,
+                    ),
+                  ),
                   const SizedBox(height: 4),
-                  Text(subtitle, style: TextStyle(color: muted, fontWeight: FontWeight.w600)),
+                  Text(
+                    subtitle,
+                    style: TextStyle(color: muted, fontWeight: FontWeight.w600),
+                  ),
                 ],
               ),
             ),
@@ -4901,7 +5576,20 @@ class _MiniBarChart extends StatelessWidget {
     final teal = const Color(0xFF29D6C7);
 
     // Simple fixed bars to match the screenshot vibe (no chart package)
-    final bars = <double>[0.35, 0.55, 0.28, 0.62, 0.42, 0.58, 0.40, 0.70, 0.46, 0.78, 0.33, 0.60];
+    final bars = <double>[
+      0.35,
+      0.55,
+      0.28,
+      0.62,
+      0.42,
+      0.58,
+      0.40,
+      0.70,
+      0.46,
+      0.78,
+      0.33,
+      0.60,
+    ];
 
     return SizedBox(
       height: 150,
@@ -4962,7 +5650,6 @@ class PlaceholderScreen extends StatelessWidget {
   }
 }
 
-
 class _ConfirmItem {
   final String merchant;
   final String amount;
@@ -4973,7 +5660,6 @@ class _ConfirmItem {
     required this.time,
   });
 }
-
 
 class _ConfirmTile extends StatelessWidget {
   final _ConfirmItem item;
@@ -5002,7 +5688,10 @@ class _ConfirmTile extends StatelessWidget {
               color: const Color(0xFFEFF2F6),
               borderRadius: BorderRadius.circular(16),
             ),
-            child: const Icon(Icons.help_outline_rounded, color: Color(0xFF334155)),
+            child: const Icon(
+              Icons.help_outline_rounded,
+              color: Color(0xFF334155),
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -5018,7 +5707,10 @@ class _ConfirmTile extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 4),
-                Text(item.time, style: TextStyle(color: muted, fontWeight: FontWeight.w600)),
+                Text(
+                  item.time,
+                  style: TextStyle(color: muted, fontWeight: FontWeight.w600),
+                ),
               ],
             ),
           ),
@@ -5026,7 +5718,10 @@ class _ConfirmTile extends StatelessWidget {
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Text(item.amount, style: TextStyle(color: textDark, fontWeight: FontWeight.w900)),
+              Text(
+                item.amount,
+                style: TextStyle(color: textDark, fontWeight: FontWeight.w900),
+              ),
               const SizedBox(height: 8),
               SizedBox(
                 height: 32,
@@ -5036,10 +5731,15 @@ class _ConfirmTile extends StatelessWidget {
                     backgroundColor: const Color(0xFF29D6C7),
                     foregroundColor: Colors.black,
                     elevation: 0,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(999),
+                    ),
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                   ),
-                  child: const Text("Confirm", style: TextStyle(fontWeight: FontWeight.w900)),
+                  child: const Text(
+                    "Confirm",
+                    style: TextStyle(fontWeight: FontWeight.w900),
+                  ),
                 ),
               ),
             ],
@@ -5049,6 +5749,7 @@ class _ConfirmTile extends StatelessWidget {
     );
   }
 }
+
 class _ConfirmBottomSheet extends StatefulWidget {
   final String merchant;
   const _ConfirmBottomSheet({required this.merchant});
@@ -5102,7 +5803,10 @@ class _ConfirmBottomSheetState extends State<_ConfirmBottomSheet> {
             const SizedBox(height: 6),
             Text(
               "Edit the name and pick a category.",
-              style: TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF64748B)),
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF64748B),
+              ),
             ),
 
             const SizedBox(height: 14),
@@ -5115,7 +5819,9 @@ class _ConfirmBottomSheetState extends State<_ConfirmBottomSheet> {
                 labelText: "Transaction name",
                 filled: true,
                 fillColor: Colors.white,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
               ),
             ),
 
@@ -5130,13 +5836,21 @@ class _ConfirmBottomSheetState extends State<_ConfirmBottomSheet> {
                   borderRadius: BorderRadius.circular(999),
                   onTap: () => setState(() => selectedCategory = o),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
                     decoration: BoxDecoration(
                       color: isSel ? teal.withOpacity(0.18) : Colors.white,
                       borderRadius: BorderRadius.circular(999),
-                      border: Border.all(color: isSel ? teal : const Color(0xFFE5E7EB)),
+                      border: Border.all(
+                        color: isSel ? teal : const Color(0xFFE5E7EB),
+                      ),
                     ),
-                    child: Text(o, style: const TextStyle(fontWeight: FontWeight.w800)),
+                    child: Text(
+                      o,
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
                   ),
                 );
               }).toList(),
@@ -5160,9 +5874,14 @@ class _ConfirmBottomSheetState extends State<_ConfirmBottomSheet> {
                   backgroundColor: teal,
                   foregroundColor: Colors.black,
                   elevation: 0,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
                 ),
-                child: const Text("Save", style: TextStyle(fontWeight: FontWeight.w900)),
+                child: const Text(
+                  "Save",
+                  style: TextStyle(fontWeight: FontWeight.w900),
+                ),
               ),
             ),
           ],
@@ -5172,7 +5891,7 @@ class _ConfirmBottomSheetState extends State<_ConfirmBottomSheet> {
   }
 }
 
-// Profile section 
+// Profile section
 Future<void> showProfileSideSheet(BuildContext context) async {
   await showGeneralDialog(
     context: context,
@@ -5182,8 +5901,10 @@ Future<void> showProfileSideSheet(BuildContext context) async {
     transitionDuration: const Duration(milliseconds: 260),
     pageBuilder: (_, __, ___) => const SizedBox.shrink(),
     transitionBuilder: (context, anim, __, ___) {
-      final slide = Tween<Offset>(begin: const Offset(-1, 0), end: Offset.zero)
-          .animate(CurvedAnimation(parent: anim, curve: Curves.easeOut));
+      final slide = Tween<Offset>(
+        begin: const Offset(-1, 0),
+        end: Offset.zero,
+      ).animate(CurvedAnimation(parent: anim, curve: Curves.easeOut));
 
       return SlideTransition(
         position: slide,
@@ -5226,196 +5947,280 @@ class _ProfileSideSheet extends StatelessWidget {
         // Linked accounts
         final accounts = context.watch<BankProvider>().accounts;
 
-    return SafeArea(
-      child: Container(
-        height: double.infinity,
-        decoration: const BoxDecoration(
-          color: Color(0xFFF7F8FA),
-          borderRadius: BorderRadius.only(
-            topRight: Radius.circular(24),
-            bottomRight: Radius.circular(24),
-          ),
-        ),
-        child: Column(
-          children: [
-            // Header
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
-              child: Row(
-                children: [
-                  InkWell(
-                    borderRadius: BorderRadius.circular(999),
-                    onTap: () => Navigator.pop(context),
-                    child: Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFEFF2F6),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: const Icon(Icons.close, color: Color(0xFF334155)),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Text("Profile",
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: textDark)),
-                ],
+        return SafeArea(
+          child: Container(
+            height: double.infinity,
+            decoration: const BoxDecoration(
+              color: Color(0xFFF7F8FA),
+              borderRadius: BorderRadius.only(
+                topRight: Radius.circular(24),
+                bottomRight: Radius.circular(24),
               ),
             ),
-
-            // User block
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 6, 14, 10),
-              child: Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(14),
+            child: Column(
+              children: [
+                // Header
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
                   child: Row(
                     children: [
-                      Container(
-                        width: 54,
-                        height: 54,
-                        decoration: BoxDecoration(
-                          color: teal.withOpacity(0.12),
-                          borderRadius: BorderRadius.circular(18),
+                      InkWell(
+                        borderRadius: BorderRadius.circular(999),
+                        onTap: () => Navigator.pop(context),
+                        child: Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEFF2F6),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: const Icon(
+                            Icons.close,
+                            color: Color(0xFF334155),
+                          ),
                         ),
-                        child: const Icon(Icons.person, color: Color(0xFF0F172A), size: 30),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(userName,
-                                style: TextStyle(
-                                    color: textDark, fontWeight: FontWeight.w900, fontSize: 16)),
-                            if (userEmail.isNotEmpty) ...[
-                              const SizedBox(height: 4),
-                              Text(userEmail,
-                                  style: TextStyle(color: muted, fontWeight: FontWeight.w600, fontSize: 13)),
-                            ],
-                            const SizedBox(height: 4),
-                            Text(lastSync,
-                                style: TextStyle(color: muted, fontWeight: FontWeight.w700)),
-                          ],
+                      const SizedBox(width: 10),
+                      Text(
+                        "Profile",
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                          color: textDark,
                         ),
                       ),
                     ],
                   ),
                 ),
-              ),
-            ),
 
-            // Linked accounts list
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
-              child: Row(
-                children: [
-                  Text("Linked bank accounts",
-                      style: TextStyle(color: muted, fontWeight: FontWeight.w900, letterSpacing: 1.1)),
-                  const Spacer(),
-                  TextButton(
-                    onPressed: () {
-                      Navigator.pop(context);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const SelectAccountScreen()),
-                      );
-                    },
-                    child: Text("Manage", style: TextStyle(color: teal, fontWeight: FontWeight.w900)),
-                  )
-                ],
-              ),
-            ),
-
-            Expanded(
-              child: accounts.isEmpty
-                  ? Center(
-                      child: Text(
-                        "No accounts linked",
-                        style: TextStyle(color: muted, fontWeight: FontWeight.w600),
-                      ),
-                    )
-                  : ListView.separated(
-                      padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-                      itemCount: accounts.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 12),
-                      itemBuilder: (_, i) {
-                        final a = accounts[i];
-                        final bankMeta = IndianBanks.getById(a.institutionId);
-                        final bankColor = bankMeta != null ? Color(bankMeta.color) : const Color(0xFF334155);
-
-                        return Card(
-                          child: Padding(
-                            padding: const EdgeInsets.all(14),
-                            child: Row(
+                // User block
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 6, 14, 10),
+                  child: Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 54,
+                            height: 54,
+                            decoration: BoxDecoration(
+                              color: teal.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(18),
+                            ),
+                            child: const Icon(
+                              Icons.person,
+                              color: Color(0xFF0F172A),
+                              size: 30,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Container(
-                                  width: 44,
-                                  height: 44,
-                                  decoration: BoxDecoration(
-                                    color: bankColor.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(16),
+                                Text(
+                                  userName,
+                                  style: TextStyle(
+                                    color: textDark,
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 16,
                                   ),
-                                  child: Icon(Icons.account_balance_rounded, color: bankColor),
                                 ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(a.accountName,
-                                          style: TextStyle(color: textDark, fontWeight: FontWeight.w900)),
-                                      const SizedBox(height: 4),
-                                      Text("${a.institutionName} • ${a.maskedNumber}", style: TextStyle(color: muted, fontWeight: FontWeight.w700)),
-                                    ],
+                                if (userEmail.isNotEmpty) ...[
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    userEmail,
+                                    style: TextStyle(
+                                      color: muted,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ],
+                                const SizedBox(height: 4),
+                                Text(
+                                  lastSync,
+                                  style: TextStyle(
+                                    color: muted,
+                                    fontWeight: FontWeight.w700,
                                   ),
                                 ),
                               ],
                             ),
                           ),
-                        );
-                      },
+                        ],
+                      ),
                     ),
-            ),
-
-            // Optional: logout / settings shortcut
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-              child: SizedBox(
-                width: double.infinity,
-                height: 54,
-                child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    // Later: open Settings tab or logout flow
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: teal,
-                    foregroundColor: Colors.black,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
                   ),
-                  child: const Text("Go to Settings", style: TextStyle(fontWeight: FontWeight.w900)),
                 ),
-              ),
+
+                // Linked accounts list
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
+                  child: Row(
+                    children: [
+                      Text(
+                        "Linked bank accounts",
+                        style: TextStyle(
+                          color: muted,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1.1,
+                        ),
+                      ),
+                      const Spacer(),
+                      TextButton(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const SelectAccountScreen(),
+                            ),
+                          );
+                        },
+                        child: Text(
+                          "Manage",
+                          style: TextStyle(
+                            color: teal,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                Expanded(
+                  child: accounts.isEmpty
+                      ? Center(
+                          child: Text(
+                            "No accounts linked",
+                            style: TextStyle(
+                              color: muted,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        )
+                      : ListView.separated(
+                          padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+                          itemCount: accounts.length,
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 12),
+                          itemBuilder: (_, i) {
+                            final a = accounts[i];
+                            final bankMeta = IndianBanks.getById(
+                              a.institutionId,
+                            );
+                            final bankColor = bankMeta != null
+                                ? Color(bankMeta.color)
+                                : const Color(0xFF334155);
+
+                            return Card(
+                              child: Padding(
+                                padding: const EdgeInsets.all(14),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 44,
+                                      height: 44,
+                                      decoration: BoxDecoration(
+                                        color: bankColor.withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(16),
+                                      ),
+                                      child: Icon(
+                                        Icons.account_balance_rounded,
+                                        color: bankColor,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            a.accountName,
+                                            style: TextStyle(
+                                              color: textDark,
+                                              fontWeight: FontWeight.w900,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            "${a.institutionName} • ${a.maskedNumber}",
+                                            style: TextStyle(
+                                              color: muted,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                ),
+
+                // Optional: logout / settings shortcut
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+                  child: SizedBox(
+                    width: double.infinity,
+                    height: 54,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        // Later: open Settings tab or logout flow
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: teal,
+                        foregroundColor: Colors.black,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                      ),
+                      child: const Text(
+                        "Go to Settings",
+                        style: TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
-    );
+          ),
+        );
       }, // end Consumer builder
     ); // end Consumer
   }
 
   static String _formatDate(DateTime d) {
-    const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    const months = [
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec",
+    ];
     final hour = d.hour > 12 ? d.hour - 12 : (d.hour == 0 ? 12 : d.hour);
     final ampm = d.hour >= 12 ? "PM" : "AM";
     return "${d.day} ${months[d.month - 1]}, $hour:${d.minute.toString().padLeft(2, '0')} $ampm";
   }
 }
 
-// Adding Expenses Manually using plus buton 
+// Adding Expenses Manually using plus buton
 Future<void> showNewTransactionSheet(BuildContext context) async {
   await showModalBottomSheet(
     context: context,
@@ -5466,7 +6271,8 @@ class _NewTransactionSheetState extends State<_NewTransactionSheet> {
           final raw = amountStr.replaceAll(".", "");
           final cut = raw.isNotEmpty ? raw.substring(0, raw.length - 1) : "";
           final padded = cut.padLeft(3, "0");
-          final v = "${padded.substring(0, padded.length - 2)}.${padded.substring(padded.length - 2)}";
+          final v =
+              "${padded.substring(0, padded.length - 2)}.${padded.substring(padded.length - 2)}";
           amountStr = _trimLeading(v);
         }
         return;
@@ -5477,7 +6283,8 @@ class _NewTransactionSheetState extends State<_NewTransactionSheet> {
       final raw = amountStr.replaceAll(".", "");
       final nextRaw = (raw + k).replaceFirst(RegExp(r'^0+'), "");
       final padded = nextRaw.padLeft(3, "0");
-      final v = "${padded.substring(0, padded.length - 2)}.${padded.substring(padded.length - 2)}";
+      final v =
+          "${padded.substring(0, padded.length - 2)}.${padded.substring(padded.length - 2)}";
       amountStr = _trimLeading(v);
     });
   }
@@ -5489,11 +6296,14 @@ class _NewTransactionSheetState extends State<_NewTransactionSheet> {
     if (left.length > 1) left = left.replaceFirst(RegExp(r'^0+'), "");
     if (left.isEmpty) left = "0";
     return "$left.${parts[1]}";
-    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final canSave = (amountStr != "0.00") && merchant.text.trim().isNotEmpty && category != null;
+    final canSave =
+        (amountStr != "0.00") &&
+        merchant.text.trim().isNotEmpty &&
+        category != null;
 
     return SafeArea(
       child: SizedBox(
@@ -5515,13 +6325,25 @@ class _NewTransactionSheetState extends State<_NewTransactionSheet> {
                     ),
                   ),
                   const Spacer(),
-                  Text("New Transaction",
-                      style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: textDark)),
+                  Text(
+                    "New Transaction",
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 18,
+                      color: textDark,
+                    ),
+                  ),
                   const Spacer(),
                   TextButton(
                     onPressed: () => Navigator.pop(context),
-                    child: Text("Cancel", style: TextStyle(color: teal, fontWeight: FontWeight.w900)),
-                  )
+                    child: Text(
+                      "Cancel",
+                      style: TextStyle(
+                        color: teal,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -5529,16 +6351,34 @@ class _NewTransactionSheetState extends State<_NewTransactionSheet> {
             const SizedBox(height: 6),
 
             // Amount block
-            Text("AMOUNT",
-                style: TextStyle(color: muted, fontWeight: FontWeight.w900, letterSpacing: 1.2)),
+            Text(
+              "AMOUNT",
+              style: TextStyle(
+                color: muted,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1.2,
+              ),
+            ),
             const SizedBox(height: 8),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text("\$",
-                    style: TextStyle(fontSize: 34, fontWeight: FontWeight.w900, color: teal)),
-                Text(amountStr,
-                    style: TextStyle(fontSize: 42, fontWeight: FontWeight.w900, color: textDark)),
+                Text(
+                  "\$",
+                  style: TextStyle(
+                    fontSize: 34,
+                    fontWeight: FontWeight.w900,
+                    color: teal,
+                  ),
+                ),
+                Text(
+                  amountStr,
+                  style: TextStyle(
+                    fontSize: 42,
+                    fontWeight: FontWeight.w900,
+                    color: textDark,
+                  ),
+                ),
               ],
             ),
 
@@ -5558,7 +6398,10 @@ class _NewTransactionSheetState extends State<_NewTransactionSheet> {
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.storefront_rounded, color: Color(0xFF94A3B8)),
+                        const Icon(
+                          Icons.storefront_rounded,
+                          color: Color(0xFF94A3B8),
+                        ),
                         const SizedBox(width: 10),
                         Expanded(
                           child: TextField(
@@ -5590,19 +6433,31 @@ class _NewTransactionSheetState extends State<_NewTransactionSheet> {
                           child: DropdownButtonHideUnderline(
                             child: DropdownButton<String>(
                               value: category,
-                              hint: const Text("Select category",
-                                  style: TextStyle(fontWeight: FontWeight.w800)),
+                              hint: const Text(
+                                "Select category",
+                                style: TextStyle(fontWeight: FontWeight.w800),
+                              ),
                               items: categories
-                                  .map((c) => DropdownMenuItem(
-                                        value: c,
-                                        child: Text(c, style: const TextStyle(fontWeight: FontWeight.w800)),
-                                      ))
+                                  .map(
+                                    (c) => DropdownMenuItem(
+                                      value: c,
+                                      child: Text(
+                                        c,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                    ),
+                                  )
                                   .toList(),
                               onChanged: (v) => setState(() => category = v),
                             ),
                           ),
                         ),
-                        const Icon(Icons.keyboard_arrow_down_rounded, color: Color(0xFF94A3B8)),
+                        const Icon(
+                          Icons.keyboard_arrow_down_rounded,
+                          color: Color(0xFF94A3B8),
+                        ),
                       ],
                     ),
                   ),
@@ -5624,7 +6479,11 @@ class _NewTransactionSheetState extends State<_NewTransactionSheet> {
                     onTap: () {
                       // TODO later: open camera + OCR
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text("Receipt capture (camera + OCR) — backend later.")),
+                        const SnackBar(
+                          content: Text(
+                            "Receipt capture (camera + OCR) — backend later.",
+                          ),
+                        ),
                       );
                     },
                   ),
@@ -5633,7 +6492,9 @@ class _NewTransactionSheetState extends State<_NewTransactionSheet> {
                     icon: Icons.mic_rounded,
                     onTap: () {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text("Voice input — backend later.")),
+                        const SnackBar(
+                          content: Text("Voice input — backend later."),
+                        ),
                       );
                     },
                   ),
@@ -5642,7 +6503,9 @@ class _NewTransactionSheetState extends State<_NewTransactionSheet> {
                     icon: Icons.group_add_rounded,
                     onTap: () {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text("Split transaction — backend later.")),
+                        const SnackBar(
+                          content: Text("Split transaction — backend later."),
+                        ),
                       );
                     },
                   ),
@@ -5667,7 +6530,11 @@ class _NewTransactionSheetState extends State<_NewTransactionSheet> {
                           // TODO later: persist transaction
                           Navigator.pop(context);
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text("Saved: \$${amountStr} • ${merchant.text} • $category")),
+                            SnackBar(
+                              content: Text(
+                                "Saved: \$${amountStr} • ${merchant.text} • $category",
+                              ),
+                            ),
                           );
                         }
                       : null,
@@ -5675,9 +6542,14 @@ class _NewTransactionSheetState extends State<_NewTransactionSheet> {
                     backgroundColor: teal,
                     foregroundColor: Colors.black,
                     elevation: 0,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(18),
+                    ),
                   ),
-                  child: const Text("SAVE TRANSACTION", style: TextStyle(fontWeight: FontWeight.w900)),
+                  child: const Text(
+                    "SAVE TRANSACTION",
+                    style: TextStyle(fontWeight: FontWeight.w900),
+                  ),
                 ),
               ),
             ),
@@ -5732,10 +6604,18 @@ class _Keypad extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final keys = const [
-      "1","2","3",
-      "4","5","6",
-      "7","8","9",
-      ".","0","<",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9",
+      ".",
+      "0",
+      "<",
     ];
 
     return Padding(
@@ -5760,7 +6640,10 @@ class _Keypad extends StatelessWidget {
                   ? const Icon(Icons.backspace_outlined)
                   : Text(
                       k,
-                      style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
             ),
           );
