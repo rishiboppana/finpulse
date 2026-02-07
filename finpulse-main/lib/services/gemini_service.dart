@@ -1,17 +1,19 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 
 import '../models/transaction.dart';
-import '../database/database.dart';
+import '../database/database.dart' hide Transaction;
 import 'transaction_parser.dart';
 import 'app_logger.dart';
 
 /// Gemini AI Service for parsing complex SMS templates.
-/// Uses Gemini 3 Flash for fast, accurate extraction when Regex fails.
+/// Uses Gemini 2.0 Flash for fast, accurate extraction when Regex fails.
 class GeminiService {
-  static const String _apiKey = 'AIzaSyCyKaSO5hp0indMCVdTYW9cuk0a02tuhfk';
+  // API key from environment variable (secure)
+  static String get _apiKey => dotenv.env['GEMINI_API_KEY'] ?? '';
 
   // Singleton instance
   static final GeminiService instance = GeminiService._();
@@ -20,8 +22,11 @@ class GeminiService {
   static GenerativeModel? _model;
 
   static GenerativeModel get model {
+    if (_apiKey.isEmpty) {
+      throw Exception('GEMINI_API_KEY not configured in .env file');
+    }
     _model ??= GenerativeModel(
-      model: 'gemini-2.0-flash',
+      model: 'gemini-2.5-flash',  // Updated to available model
       apiKey: _apiKey,
       generationConfig: GenerationConfig(
         temperature: 0.1,
@@ -32,7 +37,8 @@ class GeminiService {
   }
 
   /// Generate text content using Gemini with retry logic
-  Future<String?> generateContent(String prompt, {int maxRetries = 2}) async {
+  /// Handles rate limiting (429) with longer backoff
+  Future<String?> generateContent(String prompt, {int maxRetries = 3}) async {
     final logger = AppLogger.instance;
     final stopwatch = Stopwatch()..start();
 
@@ -55,10 +61,22 @@ class GeminiService {
 
         return response.text;
       } catch (e) {
+        final errorStr = e.toString().toLowerCase();
+        final isRateLimit = errorStr.contains('429') || 
+                           errorStr.contains('quota') || 
+                           errorStr.contains('rate') ||
+                           errorStr.contains('too many');
+
         debugPrint('[GeminiService] Attempt ${attempt + 1} failed: $e');
+        
         if (attempt < maxRetries) {
-          // Exponential backoff: 500ms, 1000ms, 2000ms...
-          await Future.delayed(Duration(milliseconds: 500 * (attempt + 1)));
+          // Use longer delay for rate limiting (5s, 10s, 20s)
+          // Use shorter delay for other errors (1s, 2s, 4s)
+          final baseDelay = isRateLimit ? 5000 : 1000;
+          final delayMs = baseDelay * (attempt + 1);
+          
+          debugPrint('[GeminiService] ${isRateLimit ? "⏳ Rate limited" : "⚠️ Error"}, waiting ${delayMs}ms before retry...');
+          await Future.delayed(Duration(milliseconds: delayMs));
         }
       }
     }
@@ -73,6 +91,59 @@ class GeminiService {
 
     debugPrint('[GeminiService] All retry attempts failed');
     return null;
+  }
+
+  /// Check if text represents a CONFIRMED, COMPLETED transaction
+  /// Returns true if it's a real transaction, false if it's promotional/warning
+  static Future<bool> isConfirmedTransaction(String text) async {
+    final logger = AppLogger.instance;
+    final stopwatch = Stopwatch()..start();
+    
+    debugPrint('[GeminiService] 🔍 Intent Check Starting...');
+    logger.logGeminiRequest(
+      operation: 'intentCheck',
+      promptPreview: 'Checking: ${text.substring(0, text.length > 50 ? 50 : text.length)}...',
+    );
+    
+    try {
+      final prompt = '''Analyze this message and determine if it describes a CONFIRMED, ALREADY-COMPLETED financial transaction.
+
+Rules:
+- "debited", "credited", "paid", "sent", "received" = COMPLETED transaction = YES
+- "will be debited", "will be charged", "if balance is maintained" = FUTURE/CONDITIONAL = NO
+- "offer", "cashback available", "recharge expiring" = PROMOTIONAL = NO
+- Balance alerts without transaction = NO
+
+Reply with ONLY one word: YES or NO
+
+Message: "$text"''';
+      
+      final response = await instance.generateContent(prompt, maxRetries: 1);
+      stopwatch.stop();
+      
+      final isTransaction = response?.toUpperCase().contains('YES') ?? false;
+      
+      logger.logGeminiResponse(
+        operation: 'intentCheck',
+        success: true,
+        responsePreview: 'Intent: ${isTransaction ? "TRANSACTION" : "NOT_TRANSACTION"}',
+        latencyMs: stopwatch.elapsedMilliseconds,
+      );
+      
+      debugPrint('[GeminiService] ✅ Intent Check: ${isTransaction ? "✅ CONFIRMED TRANSACTION" : "❌ NOT A TRANSACTION"} (${stopwatch.elapsedMilliseconds}ms)');
+      return isTransaction;
+    } catch (e) {
+      stopwatch.stop();
+      logger.logGeminiResponse(
+        operation: 'intentCheck',
+        success: false,
+        latencyMs: stopwatch.elapsedMilliseconds,
+        errorMessage: e.toString(),
+      );
+      
+      debugPrint('[GeminiService] ⚠️ Intent Check FAILED: $e - defaulting to true (fail-open)');
+      return true; // Fail-open: if Gemini fails, proceed with parsing
+    }
   }
 
   /// Analyze a receipt image using Gemini Vision
@@ -276,9 +347,12 @@ If you cannot extract a field, use null. Always return valid JSON.
     // First, try regex-based parsing
     final regexResult = TransactionParser.parse(rawText, source: source);
     if (regexResult.success) {
-      // Mark as AI-parsed for demo
+      // Mark as AI-parsed for demo and link to dummy account
       return ParseResult.success(
-        regexResult.transaction!.copyWith(isParsedByAI: true),
+        regexResult.transaction!.copyWith(
+          isParsedByAI: true,
+          accountLastDigits: '4521', // Link all to dummy HDFC account
+        ),
         usedAI: true,
       );
     }
@@ -301,6 +375,7 @@ If you cannot extract a field, use null. Always return valid JSON.
       source: source,
       rawText: rawText,
       isParsedByAI: true,
+      accountLastDigits: '4521', // Link all to dummy HDFC account
     );
 
     return ParseResult.success(transaction, usedAI: true);

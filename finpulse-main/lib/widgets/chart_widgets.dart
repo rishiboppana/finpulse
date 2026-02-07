@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
+import '../models/transaction.dart';
 
 /// Category spending data for charts
 class CategorySpend {
@@ -620,5 +621,135 @@ class ChartSampleData {
 
   static List<String> getDayLabels() {
     return ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  }
+}
+
+/// Database-driven chart data provider
+/// Use this instead of ChartSampleData for real data
+class ChartDataProvider {
+  // Category colors mapping
+  static const Map<String, Color> _categoryColors = {
+    'Food': Color(0xFFF97316),
+    'Groceries': Color(0xFF22C55E),
+    'Transport': Color(0xFF3B82F6),
+    'Shopping': Color(0xFFEC4899),
+    'Entertainment': Color(0xFF8B5CF6),
+    'Bills': Color(0xFF10B981),
+    'Health': Color(0xFFEF4444),
+    'Coffee': Color(0xFF92400E),
+    'Income': Color(0xFF14B8A6),
+    'Other': Color(0xFF64748B),
+  };
+
+  static const Map<String, IconData> _categoryIcons = {
+    'Food': Icons.restaurant,
+    'Groceries': Icons.shopping_cart,
+    'Transport': Icons.directions_car,
+    'Shopping': Icons.shopping_bag,
+    'Entertainment': Icons.movie,
+    'Bills': Icons.receipt,
+    'Health': Icons.medical_services,
+    'Coffee': Icons.coffee,
+    'Income': Icons.account_balance_wallet,
+    'Other': Icons.more_horiz,
+  };
+
+  /// Get category spending from transactions
+  static List<CategorySpend> getCategoryDataFromMap(Map<String, double> categorySpending) {
+    if (categorySpending.isEmpty) {
+      return ChartSampleData.getCategoryData(); // Fallback to sample if no data
+    }
+
+    final List<CategorySpend> result = [];
+    categorySpending.forEach((category, amount) {
+      if (amount > 0) {
+        result.add(CategorySpend(
+          name: category,
+          amount: amount,
+          color: _categoryColors[category] ?? const Color(0xFF64748B),
+          icon: _categoryIcons[category] ?? Icons.more_horiz,
+        ));
+      }
+    });
+
+    // Sort by amount descending
+    result.sort((a, b) => b.amount.compareTo(a.amount));
+    return result.isEmpty ? ChartSampleData.getCategoryData() : result;
+  }
+
+  /// Get weekly spending totals (Mon-Sun) from transactions
+  static List<double> getWeeklyFromTransactions(List<dynamic> transactions) {
+    final now = DateTime.now();
+    final weekStart = now.subtract(Duration(days: now.weekday - 1));
+    final startOfWeek = DateTime(weekStart.year, weekStart.month, weekStart.day);
+
+    final List<double> dailyTotals = List.filled(7, 0.0);
+
+    for (final tx in transactions) {
+      if (tx.type == TransactionType.debit) {
+        final dayIndex = tx.timestamp.difference(startOfWeek).inDays;
+        if (dayIndex >= 0 && dayIndex < 7) {
+          dailyTotals[dayIndex] += tx.amount;
+        }
+      }
+    }
+
+    return dailyTotals;
+  }
+
+  /// Get last week's spending totals
+  static List<double> getLastWeekFromTransactions(List<dynamic> transactions) {
+    final now = DateTime.now();
+    final weekStart = now.subtract(Duration(days: now.weekday - 1 + 7));
+    final startOfLastWeek = DateTime(weekStart.year, weekStart.month, weekStart.day);
+    final endOfLastWeek = startOfLastWeek.add(const Duration(days: 7));
+
+    final List<double> dailyTotals = List.filled(7, 0.0);
+
+    for (final tx in transactions) {
+      if (tx.type == TransactionType.debit && 
+          tx.timestamp.isAfter(startOfLastWeek) &&
+          tx.timestamp.isBefore(endOfLastWeek)) {
+        final dayIndex = tx.timestamp.difference(startOfLastWeek).inDays;
+        if (dayIndex >= 0 && dayIndex < 7) {
+          dailyTotals[dayIndex] += tx.amount;
+        }
+      }
+    }
+
+    return dailyTotals;
+  }
+
+  /// Get monthly trend (last 30 days, grouped by 5-day periods)
+  static List<double> getMonthlyTrendFromTransactions(List<dynamic> transactions) {
+    final now = DateTime.now();
+    final List<double> periodTotals = List.filled(6, 0.0); // 6 periods of 5 days
+
+    for (final tx in transactions) {
+      if (tx.type == TransactionType.debit) {
+        final daysAgo = now.difference(tx.timestamp).inDays;
+        if (daysAgo >= 0 && daysAgo < 30) {
+          final periodIndex = 5 - (daysAgo ~/ 5); // Reverse order (oldest first)
+          if (periodIndex >= 0 && periodIndex < 6) {
+            periodTotals[periodIndex] += tx.amount;
+          }
+        }
+      }
+    }
+
+    return periodTotals;
+  }
+
+  /// Get period labels for monthly trend
+  static List<String> getMonthlyTrendLabels() {
+    final now = DateTime.now();
+    final List<String> labels = [];
+    
+    for (int i = 5; i >= 0; i--) {
+      final date = now.subtract(Duration(days: i * 5));
+      labels.add('${date.day}/${date.month}');
+    }
+    
+    return labels;
   }
 }

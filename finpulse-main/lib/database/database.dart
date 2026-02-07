@@ -43,6 +43,16 @@ class Transactions extends Table {
   // De-duplication fingerprint (hash of amount + merchant + timestamp + account)
   TextColumn get fingerprint => text().nullable()();
   
+  // Reference ID for deduplication (UPI Ref, Bank Ref No, NEFT Ref, etc.)
+  TextColumn get referenceId => text().nullable()();
+  
+  // Internal ID for cross-source deduplication (deterministic hash)
+  TextColumn get internalId => text().nullable()();
+  
+  // Transaction status for future AA reconciliation
+  // Values: 'pending', 'confirmed', 'duplicate'
+  TextColumn get status => text().withDefault(const Constant('confirmed'))();
+  
   // Amount & Currency
   RealColumn get amount => real()();
   TextColumn get currency => text().withDefault(const Constant('INR'))();

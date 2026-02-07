@@ -239,12 +239,11 @@ class DeduplicationService {
       timestamp: existing.timestamp, // Keep first timestamp
       accountLastDigits: existing.accountLastDigits ?? newTxn.accountLastDigits,
       rawMerchantId: existing.rawMerchantId ?? newTxn.rawMerchantId,
-      transactionId: existing.transactionId ?? newTxn.transactionId,
+      merchantName: existing.merchantName ?? newTxn.merchantName,
       type: existing.type,
       source: existing.source, // Keep original source
       rawText: '${existing.rawText}\n---\n${newTxn.rawText}', // Combine raw texts
-      categoryId: existing.categoryId ?? newTxn.categoryId,
-      displayMerchant: existing.displayMerchant ?? newTxn.displayMerchant,
+      category: existing.category ?? newTxn.category,
       isParsedByAI: existing.isParsedByAI || newTxn.isParsedByAI,
     );
   }

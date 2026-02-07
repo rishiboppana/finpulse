@@ -29,6 +29,38 @@ class $TransactionsTable extends Transactions
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _referenceIdMeta = const VerificationMeta(
+    'referenceId',
+  );
+  @override
+  late final GeneratedColumn<String> referenceId = GeneratedColumn<String>(
+    'reference_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _internalIdMeta = const VerificationMeta(
+    'internalId',
+  );
+  @override
+  late final GeneratedColumn<String> internalId = GeneratedColumn<String>(
+    'internal_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _statusMeta = const VerificationMeta('status');
+  @override
+  late final GeneratedColumn<String> status = GeneratedColumn<String>(
+    'status',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('confirmed'),
+  );
   static const VerificationMeta _amountMeta = const VerificationMeta('amount');
   @override
   late final GeneratedColumn<double> amount = GeneratedColumn<double>(
@@ -272,6 +304,9 @@ class $TransactionsTable extends Transactions
   List<GeneratedColumn> get $columns => [
     id,
     fingerprint,
+    referenceId,
+    internalId,
+    status,
     amount,
     currency,
     timestamp,
@@ -318,6 +353,27 @@ class $TransactionsTable extends Transactions
           data['fingerprint']!,
           _fingerprintMeta,
         ),
+      );
+    }
+    if (data.containsKey('reference_id')) {
+      context.handle(
+        _referenceIdMeta,
+        referenceId.isAcceptableOrUnknown(
+          data['reference_id']!,
+          _referenceIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('internal_id')) {
+      context.handle(
+        _internalIdMeta,
+        internalId.isAcceptableOrUnknown(data['internal_id']!, _internalIdMeta),
+      );
+    }
+    if (data.containsKey('status')) {
+      context.handle(
+        _statusMeta,
+        status.isAcceptableOrUnknown(data['status']!, _statusMeta),
       );
     }
     if (data.containsKey('amount')) {
@@ -503,6 +559,18 @@ class $TransactionsTable extends Transactions
         DriftSqlType.string,
         data['${effectivePrefix}fingerprint'],
       ),
+      referenceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}reference_id'],
+      ),
+      internalId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}internal_id'],
+      ),
+      status: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}status'],
+      )!,
       amount: attachedDatabase.typeMapping.read(
         DriftSqlType.double,
         data['${effectivePrefix}amount'],
@@ -599,6 +667,9 @@ class $TransactionsTable extends Transactions
 class Transaction extends DataClass implements Insertable<Transaction> {
   final String id;
   final String? fingerprint;
+  final String? referenceId;
+  final String? internalId;
+  final String status;
   final double amount;
   final String currency;
   final int timestamp;
@@ -623,6 +694,9 @@ class Transaction extends DataClass implements Insertable<Transaction> {
   const Transaction({
     required this.id,
     this.fingerprint,
+    this.referenceId,
+    this.internalId,
+    required this.status,
     required this.amount,
     required this.currency,
     required this.timestamp,
@@ -652,6 +726,13 @@ class Transaction extends DataClass implements Insertable<Transaction> {
     if (!nullToAbsent || fingerprint != null) {
       map['fingerprint'] = Variable<String>(fingerprint);
     }
+    if (!nullToAbsent || referenceId != null) {
+      map['reference_id'] = Variable<String>(referenceId);
+    }
+    if (!nullToAbsent || internalId != null) {
+      map['internal_id'] = Variable<String>(internalId);
+    }
+    map['status'] = Variable<String>(status);
     map['amount'] = Variable<double>(amount);
     map['currency'] = Variable<String>(currency);
     map['timestamp'] = Variable<int>(timestamp);
@@ -700,6 +781,13 @@ class Transaction extends DataClass implements Insertable<Transaction> {
       fingerprint: fingerprint == null && nullToAbsent
           ? const Value.absent()
           : Value(fingerprint),
+      referenceId: referenceId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(referenceId),
+      internalId: internalId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(internalId),
+      status: Value(status),
       amount: Value(amount),
       currency: Value(currency),
       timestamp: Value(timestamp),
@@ -750,6 +838,9 @@ class Transaction extends DataClass implements Insertable<Transaction> {
     return Transaction(
       id: serializer.fromJson<String>(json['id']),
       fingerprint: serializer.fromJson<String?>(json['fingerprint']),
+      referenceId: serializer.fromJson<String?>(json['referenceId']),
+      internalId: serializer.fromJson<String?>(json['internalId']),
+      status: serializer.fromJson<String>(json['status']),
       amount: serializer.fromJson<double>(json['amount']),
       currency: serializer.fromJson<String>(json['currency']),
       timestamp: serializer.fromJson<int>(json['timestamp']),
@@ -783,6 +874,9 @@ class Transaction extends DataClass implements Insertable<Transaction> {
     return <String, dynamic>{
       'id': serializer.toJson<String>(id),
       'fingerprint': serializer.toJson<String?>(fingerprint),
+      'referenceId': serializer.toJson<String?>(referenceId),
+      'internalId': serializer.toJson<String?>(internalId),
+      'status': serializer.toJson<String>(status),
       'amount': serializer.toJson<double>(amount),
       'currency': serializer.toJson<String>(currency),
       'timestamp': serializer.toJson<int>(timestamp),
@@ -810,6 +904,9 @@ class Transaction extends DataClass implements Insertable<Transaction> {
   Transaction copyWith({
     String? id,
     Value<String?> fingerprint = const Value.absent(),
+    Value<String?> referenceId = const Value.absent(),
+    Value<String?> internalId = const Value.absent(),
+    String? status,
     double? amount,
     String? currency,
     int? timestamp,
@@ -834,6 +931,9 @@ class Transaction extends DataClass implements Insertable<Transaction> {
   }) => Transaction(
     id: id ?? this.id,
     fingerprint: fingerprint.present ? fingerprint.value : this.fingerprint,
+    referenceId: referenceId.present ? referenceId.value : this.referenceId,
+    internalId: internalId.present ? internalId.value : this.internalId,
+    status: status ?? this.status,
     amount: amount ?? this.amount,
     currency: currency ?? this.currency,
     timestamp: timestamp ?? this.timestamp,
@@ -868,6 +968,13 @@ class Transaction extends DataClass implements Insertable<Transaction> {
       fingerprint: data.fingerprint.present
           ? data.fingerprint.value
           : this.fingerprint,
+      referenceId: data.referenceId.present
+          ? data.referenceId.value
+          : this.referenceId,
+      internalId: data.internalId.present
+          ? data.internalId.value
+          : this.internalId,
+      status: data.status.present ? data.status.value : this.status,
       amount: data.amount.present ? data.amount.value : this.amount,
       currency: data.currency.present ? data.currency.value : this.currency,
       timestamp: data.timestamp.present ? data.timestamp.value : this.timestamp,
@@ -915,6 +1022,9 @@ class Transaction extends DataClass implements Insertable<Transaction> {
     return (StringBuffer('Transaction(')
           ..write('id: $id, ')
           ..write('fingerprint: $fingerprint, ')
+          ..write('referenceId: $referenceId, ')
+          ..write('internalId: $internalId, ')
+          ..write('status: $status, ')
           ..write('amount: $amount, ')
           ..write('currency: $currency, ')
           ..write('timestamp: $timestamp, ')
@@ -944,6 +1054,9 @@ class Transaction extends DataClass implements Insertable<Transaction> {
   int get hashCode => Object.hashAll([
     id,
     fingerprint,
+    referenceId,
+    internalId,
+    status,
     amount,
     currency,
     timestamp,
@@ -972,6 +1085,9 @@ class Transaction extends DataClass implements Insertable<Transaction> {
       (other is Transaction &&
           other.id == this.id &&
           other.fingerprint == this.fingerprint &&
+          other.referenceId == this.referenceId &&
+          other.internalId == this.internalId &&
+          other.status == this.status &&
           other.amount == this.amount &&
           other.currency == this.currency &&
           other.timestamp == this.timestamp &&
@@ -998,6 +1114,9 @@ class Transaction extends DataClass implements Insertable<Transaction> {
 class TransactionsCompanion extends UpdateCompanion<Transaction> {
   final Value<String> id;
   final Value<String?> fingerprint;
+  final Value<String?> referenceId;
+  final Value<String?> internalId;
+  final Value<String> status;
   final Value<double> amount;
   final Value<String> currency;
   final Value<int> timestamp;
@@ -1023,6 +1142,9 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
   const TransactionsCompanion({
     this.id = const Value.absent(),
     this.fingerprint = const Value.absent(),
+    this.referenceId = const Value.absent(),
+    this.internalId = const Value.absent(),
+    this.status = const Value.absent(),
     this.amount = const Value.absent(),
     this.currency = const Value.absent(),
     this.timestamp = const Value.absent(),
@@ -1049,6 +1171,9 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
   TransactionsCompanion.insert({
     required String id,
     this.fingerprint = const Value.absent(),
+    this.referenceId = const Value.absent(),
+    this.internalId = const Value.absent(),
+    this.status = const Value.absent(),
     required double amount,
     this.currency = const Value.absent(),
     required int timestamp,
@@ -1083,6 +1208,9 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
   static Insertable<Transaction> custom({
     Expression<String>? id,
     Expression<String>? fingerprint,
+    Expression<String>? referenceId,
+    Expression<String>? internalId,
+    Expression<String>? status,
     Expression<double>? amount,
     Expression<String>? currency,
     Expression<int>? timestamp,
@@ -1109,6 +1237,9 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (fingerprint != null) 'fingerprint': fingerprint,
+      if (referenceId != null) 'reference_id': referenceId,
+      if (internalId != null) 'internal_id': internalId,
+      if (status != null) 'status': status,
       if (amount != null) 'amount': amount,
       if (currency != null) 'currency': currency,
       if (timestamp != null) 'timestamp': timestamp,
@@ -1138,6 +1269,9 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
   TransactionsCompanion copyWith({
     Value<String>? id,
     Value<String?>? fingerprint,
+    Value<String?>? referenceId,
+    Value<String?>? internalId,
+    Value<String>? status,
     Value<double>? amount,
     Value<String>? currency,
     Value<int>? timestamp,
@@ -1164,6 +1298,9 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
     return TransactionsCompanion(
       id: id ?? this.id,
       fingerprint: fingerprint ?? this.fingerprint,
+      referenceId: referenceId ?? this.referenceId,
+      internalId: internalId ?? this.internalId,
+      status: status ?? this.status,
       amount: amount ?? this.amount,
       currency: currency ?? this.currency,
       timestamp: timestamp ?? this.timestamp,
@@ -1197,6 +1334,15 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
     }
     if (fingerprint.present) {
       map['fingerprint'] = Variable<String>(fingerprint.value);
+    }
+    if (referenceId.present) {
+      map['reference_id'] = Variable<String>(referenceId.value);
+    }
+    if (internalId.present) {
+      map['internal_id'] = Variable<String>(internalId.value);
+    }
+    if (status.present) {
+      map['status'] = Variable<String>(status.value);
     }
     if (amount.present) {
       map['amount'] = Variable<double>(amount.value);
@@ -1274,6 +1420,9 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
     return (StringBuffer('TransactionsCompanion(')
           ..write('id: $id, ')
           ..write('fingerprint: $fingerprint, ')
+          ..write('referenceId: $referenceId, ')
+          ..write('internalId: $internalId, ')
+          ..write('status: $status, ')
           ..write('amount: $amount, ')
           ..write('currency: $currency, ')
           ..write('timestamp: $timestamp, ')
@@ -6540,6 +6689,9 @@ typedef $$TransactionsTableCreateCompanionBuilder =
     TransactionsCompanion Function({
       required String id,
       Value<String?> fingerprint,
+      Value<String?> referenceId,
+      Value<String?> internalId,
+      Value<String> status,
       required double amount,
       Value<String> currency,
       required int timestamp,
@@ -6567,6 +6719,9 @@ typedef $$TransactionsTableUpdateCompanionBuilder =
     TransactionsCompanion Function({
       Value<String> id,
       Value<String?> fingerprint,
+      Value<String?> referenceId,
+      Value<String?> internalId,
+      Value<String> status,
       Value<double> amount,
       Value<String> currency,
       Value<int> timestamp,
@@ -6633,6 +6788,21 @@ class $$TransactionsTableFilterComposer
 
   ColumnFilters<String> get fingerprint => $composableBuilder(
     column: $table.fingerprint,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get referenceId => $composableBuilder(
+    column: $table.referenceId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get internalId => $composableBuilder(
+    column: $table.internalId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get status => $composableBuilder(
+    column: $table.status,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -6786,6 +6956,21 @@ class $$TransactionsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get referenceId => $composableBuilder(
+    column: $table.referenceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get internalId => $composableBuilder(
+    column: $table.internalId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get status => $composableBuilder(
+    column: $table.status,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<double> get amount => $composableBuilder(
     column: $table.amount,
     builder: (column) => ColumnOrderings(column),
@@ -6908,6 +7093,19 @@ class $$TransactionsTableAnnotationComposer
     column: $table.fingerprint,
     builder: (column) => column,
   );
+
+  GeneratedColumn<String> get referenceId => $composableBuilder(
+    column: $table.referenceId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get internalId => $composableBuilder(
+    column: $table.internalId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get status =>
+      $composableBuilder(column: $table.status, builder: (column) => column);
 
   GeneratedColumn<double> get amount =>
       $composableBuilder(column: $table.amount, builder: (column) => column);
@@ -7046,6 +7244,9 @@ class $$TransactionsTableTableManager
               ({
                 Value<String> id = const Value.absent(),
                 Value<String?> fingerprint = const Value.absent(),
+                Value<String?> referenceId = const Value.absent(),
+                Value<String?> internalId = const Value.absent(),
+                Value<String> status = const Value.absent(),
                 Value<double> amount = const Value.absent(),
                 Value<String> currency = const Value.absent(),
                 Value<int> timestamp = const Value.absent(),
@@ -7071,6 +7272,9 @@ class $$TransactionsTableTableManager
               }) => TransactionsCompanion(
                 id: id,
                 fingerprint: fingerprint,
+                referenceId: referenceId,
+                internalId: internalId,
+                status: status,
                 amount: amount,
                 currency: currency,
                 timestamp: timestamp,
@@ -7098,6 +7302,9 @@ class $$TransactionsTableTableManager
               ({
                 required String id,
                 Value<String?> fingerprint = const Value.absent(),
+                Value<String?> referenceId = const Value.absent(),
+                Value<String?> internalId = const Value.absent(),
+                Value<String> status = const Value.absent(),
                 required double amount,
                 Value<String> currency = const Value.absent(),
                 required int timestamp,
@@ -7123,6 +7330,9 @@ class $$TransactionsTableTableManager
               }) => TransactionsCompanion.insert(
                 id: id,
                 fingerprint: fingerprint,
+                referenceId: referenceId,
+                internalId: internalId,
+                status: status,
                 amount: amount,
                 currency: currency,
                 timestamp: timestamp,

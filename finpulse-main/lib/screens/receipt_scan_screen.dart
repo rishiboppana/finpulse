@@ -2,7 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../services/gemini_service.dart';
-import '../services/transaction_storage_service.dart';
+import '../services/service_initializer.dart';
 import '../models/transaction.dart';
 
 /// Receipt Scanning Screen
@@ -113,10 +113,11 @@ class _ReceiptScanScreenState extends State<ReceiptScanScreen> {
       type: TransactionType.debit,
       source: DetectionSource.manual,
       rawText: 'Receipt scan: ${_extractedData!.merchant} - ₹${_extractedData!.total}',
+      accountLastDigits: '4521', // Link to demo bank account
     );
 
-    // Save to local storage
-    await TransactionStorageService.instance.addTransaction(transaction);
+    // Save to SQLite database (unified storage)
+    await ServiceInitializer.transactions.addTransaction(transaction);
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(

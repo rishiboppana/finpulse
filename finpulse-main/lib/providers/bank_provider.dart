@@ -223,6 +223,42 @@ class BankProvider extends ChangeNotifier {
     }
   }
 
+  /// Update account balance by a delta amount (positive for credit, negative for debit)
+  /// Call this when a new transaction is added to keep balance in sync
+  void updateBalanceByDelta({
+    required String accountLastDigits,
+    required double delta,
+  }) {
+    for (int i = 0; i < _accounts.length; i++) {
+      // Match by last 4 digits of masked number
+      if (_accounts[i].maskedNumber.endsWith(accountLastDigits)) {
+        _accounts[i] = _accounts[i].copyWith(
+          balance: _accounts[i].balance + delta,
+        );
+        notifyListeners();
+        return;
+      }
+    }
+  }
+
+  /// Recalculate balance for account based on base amount and transactions
+  /// baseBalance = starting balance before any transactions
+  void recalculateBalance({
+    required String accountLastDigits,
+    required double baseBalance,
+    required double totalCredits,
+    required double totalDebits,
+  }) {
+    final newBalance = baseBalance + totalCredits - totalDebits;
+    for (int i = 0; i < _accounts.length; i++) {
+      if (_accounts[i].maskedNumber.endsWith(accountLastDigits)) {
+        _accounts[i] = _accounts[i].copyWith(balance: newBalance);
+        notifyListeners();
+        return;
+      }
+    }
+  }
+
   // ─────────────────────────────────────────────────────────────────────────────
   // Helpers
   // ─────────────────────────────────────────────────────────────────────────────

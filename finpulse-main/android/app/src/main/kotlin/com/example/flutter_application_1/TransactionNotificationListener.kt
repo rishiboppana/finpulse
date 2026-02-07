@@ -118,6 +118,8 @@ class TransactionNotificationListener : NotificationListenerService() {
     
     /**
      * Show a FinPulse notification for the detected transaction
+     * DISABLED: Native notifications bypass Flutter's deduplication logic.
+     * Flutter's SystemNotificationService now handles all notifications.
      */
     private fun showFinPulseNotification(title: String, text: String, packageName: String) {
         try {
@@ -129,6 +131,12 @@ class TransactionNotificationListener : NotificationListenerService() {
             // Get merchant name (use title or extracted info)
             val merchant = title.take(30)
             
+            // DISABLED: Let Flutter handle notifications with proper deduplication
+            // The transaction data is already sent to Flutter via MethodChannel.
+            // Flutter's SystemNotificationService will show notification after dedup check.
+            Log.d(TAG, "Skipping native notification (Flutter handles with deduplication): ₹$amount at $merchant")
+            
+            /*
             // Generate unique notification ID
             val notificationId = System.currentTimeMillis().toInt()
             
@@ -140,10 +148,9 @@ class TransactionNotificationListener : NotificationListenerService() {
                 merchant = merchant,
                 rawText = text
             )
-            
-            Log.d(TAG, "FinPulse notification shown: ₹$amount at $merchant")
+            */
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to show FinPulse notification: ${e.message}")
+            Log.e(TAG, "Failed to process notification: ${e.message}")
         }
     }
     

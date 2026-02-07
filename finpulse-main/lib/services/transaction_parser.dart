@@ -73,6 +73,7 @@ class TransactionParser {
       final dateTime = _extractDateTime(rawText);
       final transactionType = _determineTransactionType(rawText);
       final merchant = _extractMerchant(rawText);
+      final referenceId = _extractReferenceId(rawText);
 
       final transaction = Transaction(
         id: _generateId(),
@@ -84,12 +85,22 @@ class TransactionParser {
         source: source,
         rawText: rawText,
         isParsedByAI: false,
+        referenceId: referenceId,
       );
 
       return ParseResult.success(transaction);
     } catch (e) {
       return ParseResult.failure('Parsing error: $e');
     }
+  }
+
+  /// Extract UPI Reference / Bank Reference ID
+  static String? _extractReferenceId(String text) {
+    final match = _upiRefPattern.firstMatch(text);
+    if (match != null) {
+      return match.group(1);
+    }
+    return null;
   }
 
   /// Extract amount from text

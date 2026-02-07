@@ -8,6 +8,7 @@ import '../services/gemini_service.dart';
 import '../services/merchant_learning_service.dart';
 import '../services/notification_service.dart';
 import '../services/transaction_storage_service.dart';
+import '../services/service_initializer.dart';
 
 /// Mock Trigger Screen for Hackathon Demo
 /// Allows triggering simulated payment notifications to test the AI pipeline.
@@ -47,7 +48,15 @@ class _MockTriggerScreenState extends State<MockTriggerScreen> {
     });
 
     if (result.success && mounted) {
-      _showGoldenWindowNotification(result.transaction!);
+      // Link to dummy account and save to database immediately (uncategorized)
+      final txWithAccount = result.transaction!.copyWith(
+        accountLastDigits: '4521', // Link to demo HDFC account
+      );
+      
+      // Save uncategorized transaction to database - will appear in "Yet to Transponse"
+      await ServiceInitializer.transactions.addTransaction(txWithAccount);
+      
+      _showGoldenWindowNotification(txWithAccount);
     }
   }
 
@@ -528,14 +537,16 @@ class GoldenWindowSheetState extends State<GoldenWindowSheet> {
         );
       }
       
-      // Save/Update transaction with category to storage
+      // Update transaction with category in database
       final updatedTransaction = widget.transaction.copyWith(
         category: categoryName,
         merchantName: _tagController.text.trim().isNotEmpty 
             ? _tagController.text.trim() 
             : widget.transaction.merchantName,
+        accountLastDigits: widget.transaction.accountLastDigits ?? '4521',
       );
-      await TransactionStorageService.instance.addTransaction(updatedTransaction);
+      // Use database service to update (not SharedPrefs)
+      await ServiceInitializer.transactions.updateTransaction(updatedTransaction);
       
       if (!mounted) return;
       Navigator.pop(context);

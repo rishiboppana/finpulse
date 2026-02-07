@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:drift/drift.dart';
 
 import '../models/transaction.dart';
-import '../database/database.dart';
+import '../database/database.dart' hide Transaction;
 import 'merchant_learning_service.dart';
 import 'app_logger.dart';
 
@@ -39,6 +39,7 @@ class NotificationService {
   }
 
   void _notifyListeners() {
+    debugPrint('[NotificationService] 📢 Notifying ${_listeners.length} listeners');
     for (final listener in _listeners) {
       listener();
     }
@@ -46,6 +47,8 @@ class NotificationService {
 
   /// Trigger a Golden Window notification for a detected transaction
   void triggerGoldenWindow(Transaction transaction) {
+    debugPrint('[NotificationService] 🪟 triggerGoldenWindow called for amount: ${transaction.amount}');
+    
     // Check if we already know this merchant
     final learning = MerchantLearningService.instance;
     final existingMapping = transaction.rawMerchantId != null
@@ -61,6 +64,7 @@ class NotificationService {
     );
 
     _pendingNotifications.insert(0, notification);
+    debugPrint('[NotificationService] 📋 Added notification, total pending: ${_pendingNotifications.length}');
     _notifyListeners();
   }
 

@@ -27,6 +27,7 @@ class Transaction {
   final DetectionSource source;
   final String rawText; // Original SMS/notification text
   final bool isParsedByAI; // True if Gemini was used
+  final String? referenceId; // UPI Ref, Bank Ref No, NEFT Ref (for deduplication)
 
   const Transaction({
     required this.id,
@@ -41,6 +42,7 @@ class Transaction {
     required this.source,
     required this.rawText,
     this.isParsedByAI = false,
+    this.referenceId,
   });
 
   /// Create from JSON
@@ -64,6 +66,7 @@ class Transaction {
       ),
       rawText: json['rawText'] as String,
       isParsedByAI: json['isParsedByAI'] as bool? ?? false,
+      referenceId: json['referenceId'] as String?,
     );
   }
 
@@ -82,6 +85,7 @@ class Transaction {
       'source': source.name,
       'rawText': rawText,
       'isParsedByAI': isParsedByAI,
+      'referenceId': referenceId,
     };
   }
 
@@ -99,6 +103,7 @@ class Transaction {
     DetectionSource? source,
     String? rawText,
     bool? isParsedByAI,
+    String? referenceId,
   }) {
     return Transaction(
       id: id ?? this.id,
@@ -113,6 +118,7 @@ class Transaction {
       source: source ?? this.source,
       rawText: rawText ?? this.rawText,
       isParsedByAI: isParsedByAI ?? this.isParsedByAI,
+      referenceId: referenceId ?? this.referenceId,
     );
   }
 

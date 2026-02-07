@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'models/bank_account.dart';
 import 'models/transaction.dart';
@@ -17,6 +18,7 @@ import 'screens/account_aggregator_screen.dart';
 import 'services/merchant_learning_service.dart';
 import 'services/native_detection_service.dart';
 import 'services/notification_service.dart';
+import 'services/system_notification_service.dart';
 import 'services/transaction_storage_service.dart';
 import 'services/service_initializer.dart';
 import 'services/app_logger.dart';
@@ -26,9 +28,15 @@ import 'database/daos/custom_category_dao.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:drift/drift.dart' show Value;
 import 'widgets/chart_widgets.dart';
+import 'screens/bank_statement_import_screen.dart';
+import 'screens/today_transactions_screen.dart';
+import 'services/data_seeder_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Load environment variables (API keys, etc.)
+  await dotenv.load(fileName: ".env");
 
   // Initialize logger first for tracking startup
   await AppLogger.instance.init();
@@ -39,6 +47,9 @@ void main() async {
 
   // Initialize database and new services (handles migration from SharedPreferences)
   await ServiceInitializer.initialize();
+
+  // Initialize system notifications (for tray notifications)
+  await SystemNotificationService.instance.init();
 
   // Legacy services (still needed for compatibility during transition)
   await MerchantLearningService.instance.init();
@@ -55,6 +66,9 @@ void main() async {
 
 class FinPulseApp extends StatelessWidget {
   const FinPulseApp({super.key});
+  
+  // Global navigator key for notification deep-linking
+  static final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
   @override
   Widget build(BuildContext context) {
@@ -65,6 +79,7 @@ class FinPulseApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => BankProvider()),
       ],
       child: MaterialApp(
+        navigatorKey: navigatorKey,
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
           useMaterial3: true,
@@ -222,34 +237,79 @@ class _MainShellState extends State<MainShell> {
     super.initState();
     // Listen for new detections to show Golden Window globally
     NotificationService.instance.addListener(_onNotificationUpdate);
+    
+    // Set the callback for notification tap deep-linking
+    SystemNotificationService.onNotificationTap = _onNotificationTapHandler;
+    
+    // Check for pending notification (app launched from notification)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkPendingNotification();
+    });
+  }
+  
+  void _checkPendingNotification() {
+    final pendingTxId = SystemNotificationService.consumePendingNotification();
+    if (pendingTxId != null) {
+      debugPrint('[MainShell] 🚀 Found pending notification: $pendingTxId');
+      _onNotificationTapHandler(pendingTxId);
+    }
   }
 
   @override
   void dispose() {
     NotificationService.instance.removeListener(_onNotificationUpdate);
+    SystemNotificationService.onNotificationTap = null;
     super.dispose();
   }
 
   void _onNotificationUpdate() {
+    debugPrint('[MainShell] 🔔 _onNotificationUpdate called');
     final notifications = NotificationService.instance.pendingNotifications;
+    debugPrint('[MainShell] 📋 Pending notifications: ${notifications.length}');
     if (notifications.isNotEmpty) {
       final latest = notifications.first;
+      debugPrint('[MainShell] ⏱️ Latest age: ${latest.age.inSeconds}s, handled: ${latest.isHandled}');
       // If it's new (< 2 seconds old) and not handled, show the sheet
       if (latest.age.inSeconds < 2 && !latest.isHandled) {
+        debugPrint('[MainShell] ✅ Showing Golden Window!');
         _showGoldenWindow(latest.transaction);
+      } else {
+        debugPrint('[MainShell] ⏭️ Skipping - age or handled condition not met');
       }
     }
   }
 
   void _showGoldenWindow(Transaction transaction) {
-    if (!mounted) return;
+    debugPrint('[MainShell] 🪟 _showGoldenWindow called for: ${transaction.amount}');
+    if (!mounted) {
+      debugPrint('[MainShell] ❌ Widget not mounted, cannot show');
+      return;
+    }
 
+    debugPrint('[MainShell] ✅ Showing modal bottom sheet');
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => GoldenWindowSheet(transaction: transaction),
     );
+  }
+
+  /// Handle notification tap - fetch transaction and show Golden Window
+  void _onNotificationTapHandler(String transactionId) async {
+    debugPrint('[MainShell] 📲 Notification tap handler: $transactionId');
+    
+    // Fetch transaction from cache
+    final allTransactions = ServiceInitializer.transactions.transactions;
+    final transaction = allTransactions.firstWhere(
+      (t) => t.id == transactionId,
+      orElse: () => allTransactions.isNotEmpty ? allTransactions.first : throw Exception('No transactions'),
+    );
+    
+    // Show Golden Window for this transaction
+    if (mounted) {
+      _showGoldenWindow(transaction);
+    }
   }
 
   @override
@@ -441,6 +501,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
   double _todaySpending = 0.0;
   bool _isLoading = true;
 
+  // Chart data (populated from database)
+  List<CategorySpend> _chartCategoryData = [];
+  List<double> _thisWeekSpends = [0, 0, 0, 0, 0, 0, 0];
+  List<double> _lastWeekSpends = [0, 0, 0, 0, 0, 0, 0];
+  List<double> _monthlyTrend = [0, 0, 0, 0, 0, 0];
+  List<String> _monthlyTrendLabels = [];
+
   // Stream subscriptions for reactive updates
   StreamSubscription<List<Transaction>>? _uncategorizedSub;
   StreamSubscription<List<Transaction>>? _todaySub;
@@ -494,6 +561,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
           _categorySpending = categories;
           _isLoading = false;
         });
+        
+        // Recalculate bank balance when transactions change
+        _recalculateBankBalance();
       }
     });
 
@@ -504,12 +574,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
   /// Load category spending for scope beyond today
   Future<void> _loadCategorySpending() async {
     final txService = ServiceInitializer.transactions;
+    await txService.init();
+    
     final categories = await txService.getSpendingByCategoryAsync();
+    final allTx = txService.transactions;
+    
     if (mounted) {
       setState(() {
         _categorySpending = categories;
+        // Update chart data from database
+        _chartCategoryData = ChartDataProvider.getCategoryDataFromMap(categories);
+        _thisWeekSpends = ChartDataProvider.getWeeklyFromTransactions(allTx);
+        _lastWeekSpends = ChartDataProvider.getLastWeekFromTransactions(allTx);
+        _monthlyTrend = ChartDataProvider.getMonthlyTrendFromTransactions(allTx);
+        _monthlyTrendLabels = ChartDataProvider.getMonthlyTrendLabels();
         _isLoading = false;
       });
+      // Recalculate bank balance from transactions
+      _recalculateBankBalance();
     }
   }
 
@@ -521,7 +603,42 @@ class _DashboardScreenState extends State<DashboardScreen> {
       setState(() {
         _categorySpending = categories;
       });
+      // Recalculate bank balance from transactions
+      _recalculateBankBalance();
     }
+  }
+
+  /// Recalculate bank balance based on all transactions linked to the account
+  /// This calculates: baseBalance + totalCredits - totalDebits
+  void _recalculateBankBalance() {
+    final bank = context.read<BankProvider>();
+    final txService = ServiceInitializer.transactions;
+    final allTx = txService.transactions;
+    
+    // For the demo HDFC account (last 4 digits: 4521)
+    // Base balance from DataSeederService is 125000.0
+    const String accountDigits = '4521';
+    const double baseBalance = 125000.0;
+    
+    double totalCredits = 0.0;
+    double totalDebits = 0.0;
+    
+    for (final tx in allTx) {
+      if (tx.accountLastDigits == accountDigits) {
+        if (tx.type == TransactionType.credit) {
+          totalCredits += tx.amount;
+        } else if (tx.type == TransactionType.debit) {
+          totalDebits += tx.amount;
+        }
+      }
+    }
+    
+    bank.recalculateBalance(
+      accountLastDigits: accountDigits,
+      baseBalance: baseBalance,
+      totalCredits: totalCredits,
+      totalDebits: totalDebits,
+    );
   }
 
   // Generate mini bars from real category spending
@@ -1046,30 +1163,39 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
                 const SizedBox(height: 12),
 
-                // Pie Chart - Category Breakdown
+                // Pie Chart - Category Breakdown (database-driven)
                 SpendingPieChart(
-                  data: ChartSampleData.getCategoryData(),
-                  total: ChartSampleData.getCategoryData().fold(
-                    0.0,
-                    (sum, item) => sum + item.amount,
-                  ),
+                  data: _chartCategoryData.isEmpty 
+                      ? ChartSampleData.getCategoryData() 
+                      : _chartCategoryData,
+                  total: _chartCategoryData.isEmpty 
+                      ? ChartSampleData.getCategoryData().fold(0.0, (sum, item) => sum + item.amount)
+                      : _chartCategoryData.fold(0.0, (sum, item) => sum + item.amount),
                 ),
 
                 const SizedBox(height: 16),
 
-                // Weekly Comparison
+                // Weekly Comparison (database-driven)
                 WeeklyComparisonChart(
-                  thisWeek: ChartSampleData.getWeeklySpends(),
-                  lastWeek: ChartSampleData.getLastWeekSpends(),
+                  thisWeek: _thisWeekSpends.every((e) => e == 0) 
+                      ? ChartSampleData.getWeeklySpends() 
+                      : _thisWeekSpends,
+                  lastWeek: _lastWeekSpends.every((e) => e == 0) 
+                      ? ChartSampleData.getLastWeekSpends() 
+                      : _lastWeekSpends,
                 ),
 
                 const SizedBox(height: 16),
 
-                // Spending Trend Line Chart
+                // Spending Trend Line Chart (database-driven)
                 SpendingTrendChart(
-                  dailySpends: ChartSampleData.getMonthlyTrend(),
-                  labels: ChartSampleData.getMonthLabels(),
-                  title: 'Monthly Spending Trend',
+                  dailySpends: _monthlyTrend.every((e) => e == 0) 
+                      ? ChartSampleData.getMonthlyTrend() 
+                      : _monthlyTrend,
+                  labels: _monthlyTrendLabels.isEmpty 
+                      ? ChartSampleData.getMonthLabels() 
+                      : _monthlyTrendLabels,
+                  title: 'Spending Trend (30 days)',
                 ),
 
                 const SizedBox(height: 18),
@@ -1084,6 +1210,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                 ),
                 const SizedBox(height: 10),
+                
+                // View All button for Today's Transactions
+                if (_todayTransactions.isNotEmpty)
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => TodayTransactionsScreen(
+                              transactions: _todayTransactions,
+                            ),
+                          ),
+                        );
+                      },
+                      child: Text(
+                        'View All (${_todayTransactions.length}) →',
+                        style: TextStyle(
+                          color: const Color(0xFF29D6C7),
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
 
                 if (_todayTransactions.isEmpty)
                   Padding(
@@ -2525,6 +2675,101 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         builder: (_) => const DetectionSettingsScreen(),
                       ),
                     );
+                  },
+                ),
+                _SettingsNavTile(
+                  icon: Icons.upload_file_rounded,
+                  iconBg: const Color(0xFF3B82F6).withOpacity(0.12),
+                  iconColor: const Color(0xFF3B82F6),
+                  title: "Import Bank Statement",
+                  subtitle: "Load Excel (.xlsx) transactions",
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const BankStatementImportScreen(),
+                      ),
+                    );
+                  },
+                ),
+                _SettingsNavTile(
+                  icon: Icons.auto_fix_high_rounded,
+                  iconBg: const Color(0xFFEC4899).withOpacity(0.12),
+                  iconColor: const Color(0xFFEC4899),
+                  title: "Seed Sample Data",
+                  subtitle: "Generate 30 days + demo bank account",
+                  onTap: () async {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text("Seeding all demo data...")),
+                    );
+                    try {
+                      // Seed transactions + get bank account
+                      final demoAccount = await DataSeederService.instance.seedFullDemo();
+                      
+                      // Add bank account to provider using named parameters
+                      if (context.mounted) {
+                        final bankProvider = context.read<BankProvider>();
+                        await bankProvider.addAccount(
+                          institutionId: demoAccount.institutionId,
+                          institutionName: demoAccount.institutionName,
+                          accountName: demoAccount.accountName,
+                          accountType: demoAccount.accountType,
+                          maskedNumber: demoAccount.maskedNumber,
+                          balance: demoAccount.balance,
+                          ifscCode: demoAccount.ifscCode,
+                          upiId: demoAccount.upiId,
+                        );
+                      }
+                      
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text("✅ Seeded data + HDFC account (₹${demoAccount.balance.toStringAsFixed(0)})"),
+                            backgroundColor: const Color(0xFF10B981),
+                          ),
+                        );
+                      }
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text("Error: $e")),
+                        );
+                      }
+                    }
+                  },
+                ),
+                _SettingsNavTile(
+                  icon: Icons.delete_sweep_rounded,
+                  iconBg: const Color(0xFFF43F5E).withOpacity(0.12),
+                  iconColor: const Color(0xFFF43F5E),
+                  title: "Clear All Data",
+                  subtitle: "Delete all transactions",
+                  onTap: () async {
+                    final confirm = await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: const Text("Clear All Data?"),
+                        content: const Text("This will delete all transactions. This cannot be undone."),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx, false),
+                            child: const Text("Cancel"),
+                          ),
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx, true),
+                            child: const Text("Delete", style: TextStyle(color: Color(0xFFF43F5E))),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (confirm == true) {
+                      await DataSeederService.instance.clearSeededData();
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text("All data cleared!")),
+                        );
+                      }
+                    }
                   },
                 ),
               ],

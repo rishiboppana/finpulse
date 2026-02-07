@@ -4,6 +4,7 @@ import '../database/database.dart';
 import '../models/transaction.dart' as model;
 import 'package:crypto/crypto.dart';
 import 'dart:convert';
+import 'dart:math';
 
 /// Database-backed Transaction Storage Service
 /// 
@@ -80,34 +81,102 @@ class DatabaseTransactionService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Add a new transaction
-  Future<void> addTransaction(model.Transaction transaction) async {
+  /// Add a new transaction with enhanced deduplication
+  /// Returns true if transaction was inserted (new), false if duplicate
+  Future<bool> addTransaction(model.Transaction transaction) async {
     await init();
 
     // Generate fingerprint for de-duplication
     final fingerprint = _generateFingerprint(transaction);
+    
+    // Generate internal ID for cross-source deduplication
+    final internalId = _generateInternalId(transaction);
+    
+    // Generate rawText hash for identical SMS detection
+    final rawTextHash = transaction.rawText != null 
+        ? md5.convert(utf8.encode(transaction.rawText!)).toString()
+        : null;
+    
+    // Get reference ID (UPI Ref, Bank Ref) from transaction
+    final referenceId = transaction.referenceId;
 
-    // Check for exact fingerprint match
-    if (await _db.transactionDao.fingerprintExists(fingerprint)) {
-      debugPrint('DatabaseTransactionService: Skipping duplicate (fingerprint match)');
-      return;
+    debugPrint('===== DEDUP CHECK: ${transaction.amount} =====');
+    debugPrint('📝 rawText: ${transaction.rawText?.substring(0, min(50, transaction.rawText?.length ?? 0))}...');
+    debugPrint('🔑 rawTextHash: $rawTextHash');
+    debugPrint('🆔 referenceId: $referenceId');
+    debugPrint('🔗 internalId: $internalId');
+    debugPrint('🔖 fingerprint: $fingerprint');
+
+    // ========== LAYER 0: Raw Text Hash Check ==========
+    // If same SMS text was already processed, it's a duplicate
+    if (rawTextHash != null) {
+      debugPrint('⏳ Layer 0: Checking rawText hash...');
+      final exists = await _db.transactionDao.rawTextHashExists(rawTextHash);
+      debugPrint('   Layer 0 result: exists=$exists');
+      if (exists) {
+        debugPrint('DatabaseTransactionService: ❌ Duplicate (same SMS text): ${transaction.amount}');
+        return false;
+      }
+    } else {
+      debugPrint('⏭️ Layer 0: Skipped (no rawText)');
     }
 
-    // Check for fuzzy duplicate (same amount, similar time, same merchant)
+    // ========== LAYER 1: Reference ID Check ==========
+    // If we have a reference ID, check for exact match first (most reliable)
+    if (referenceId != null && referenceId.isNotEmpty) {
+      debugPrint('⏳ Layer 1: Checking referenceId...');
+      final exists = await _db.transactionDao.referenceIdExists(referenceId);
+      debugPrint('   Layer 1 result: exists=$exists');
+      if (exists) {
+        debugPrint('DatabaseTransactionService: ❌ Duplicate (referenceId match): $referenceId');
+        return false;
+      }
+    } else {
+      debugPrint('⏭️ Layer 1: Skipped (no referenceId)');
+    }
+
+    // ========== LAYER 2: Internal ID Check ==========
+    // Check internal ID for cross-source duplicates (SMS + Accessibility detecting same tx)
+    debugPrint('⏳ Layer 2: Checking internalId...');
+    final internalExists = await _db.transactionDao.internalIdExists(internalId);
+    debugPrint('   Layer 2 result: exists=$internalExists');
+    if (internalExists) {
+      debugPrint('DatabaseTransactionService: ❌ Duplicate (internalId match): $internalId');
+      return false;
+    }
+
+    // ========== LAYER 3: Fingerprint Check ==========
+    debugPrint('⏳ Layer 3: Checking fingerprint...');
+    final fpExists = await _db.transactionDao.fingerprintExists(fingerprint);
+    debugPrint('   Layer 3 result: exists=$fpExists');
+    if (fpExists) {
+      debugPrint('DatabaseTransactionService: ❌ Duplicate (fingerprint match)');
+      return false;
+    }
+
+    // ========== LAYER 4: Fuzzy Match (Extended Window) ==========
+    // Check for fuzzy duplicate: same amount + same type + similar merchant + within 24 hours
+    debugPrint('⏳ Layer 4: Checking fuzzy match (24h window)...');
     final normalizedMerchant = _normalizeMerchant(transaction.rawMerchantId);
-    final similar = await _db.transactionDao.findSimilar(
+    debugPrint('   Normalized merchant: $normalizedMerchant');
+    final similar = await _db.transactionDao.findSimilarWithType(
       amount: transaction.amount,
+      type: transaction.type.name,
       normalizedMerchantId: normalizedMerchant,
       timestamp: transaction.timestamp.millisecondsSinceEpoch,
-      windowMinutes: 5,
+      windowMinutes: 1440, // 24 hours instead of 5 minutes
     );
+    debugPrint('   Layer 4 result: similar=${similar != null}');
 
     if (similar != null) {
-      debugPrint('DatabaseTransactionService: Skipping duplicate (fuzzy match)');
-      return;
+      debugPrint('DatabaseTransactionService: ❌ Duplicate (fuzzy match - same amount/type/merchant within 24h)');
+      return false;
     }
+    
+    debugPrint('===== ALL LAYERS PASSED - NEW TRANSACTION =====');
 
-    // Insert into database
+    // ========== INSERT ==========
+    debugPrint('DatabaseTransactionService: ✅ New transaction, inserting...');
     final now = DateTime.now().millisecondsSinceEpoch;
     await _db.transactionDao.insertTransaction(
       TransactionsCompanion.insert(
@@ -121,6 +190,8 @@ class DatabaseTransactionService extends ChangeNotifier {
         createdAt: now,
         updatedAt: now,
         fingerprint: Value(fingerprint),
+        internalId: Value(internalId),
+        referenceId: Value(referenceId),
         rawMerchantId: Value(transaction.rawMerchantId),
         normalizedMerchantId: Value(normalizedMerchant),
         merchantName: Value(transaction.merchantName),
@@ -133,6 +204,7 @@ class DatabaseTransactionService extends ChangeNotifier {
     // Refresh cache
     await _loadTransactions();
     notifyListeners();
+    return true;
   }
 
   /// Update a transaction (e.g., to add category)
@@ -299,6 +371,18 @@ class DatabaseTransactionService extends ChangeNotifier {
         '${transaction.timestamp.millisecondsSinceEpoch ~/ 60000}|' // Round to minute
         '${transaction.accountLastDigits}';
     return md5.convert(utf8.encode(data)).toString();
+  }
+
+  /// Generate internal ID for cross-source deduplication
+  /// This ID is SOURCE-AGNOSTIC - used to detect when SMS and Accessibility detect same tx
+  String _generateInternalId(model.Transaction transaction) {
+    // Use amount + merchant + account + timestamp (rounded to minute) for matching
+    final data = '${transaction.amount}|'
+        '${_normalizeMerchant(transaction.rawMerchantId) ?? ""}|'
+        '${transaction.accountLastDigits ?? ""}|'
+        '${transaction.timestamp.millisecondsSinceEpoch ~/ 60000}';
+    final hash = md5.convert(utf8.encode(data)).toString().substring(0, 12);
+    return 'fp_${transaction.timestamp.millisecondsSinceEpoch}_$hash';
   }
 
   /// Normalize merchant ID for matching

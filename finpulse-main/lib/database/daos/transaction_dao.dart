@@ -1,4 +1,6 @@
 import 'package:drift/drift.dart';
+import 'package:crypto/crypto.dart';
+import 'dart:convert';
 import '../database.dart';
 
 part 'transaction_dao.g.dart';
@@ -72,6 +74,64 @@ class TransactionDao extends DatabaseAccessor<AppDatabase> with _$TransactionDao
     }
 
     return await query.getSingleOrNull();
+  }
+
+  /// Find similar transactions with type check (enhanced fuzzy de-duplication)
+  Future<Transaction?> findSimilarWithType({
+    required double amount,
+    required String type,
+    required String? normalizedMerchantId,
+    required int timestamp,
+    int windowMinutes = 5,
+  }) async {
+    final minTime = timestamp - (windowMinutes * 60 * 1000);
+    final maxTime = timestamp + (windowMinutes * 60 * 1000);
+
+    final query = select(transactions)
+      ..where((t) =>
+          t.amount.equals(amount) &
+          t.type.equals(type) &
+          t.timestamp.isBetweenValues(minTime, maxTime));
+
+    if (normalizedMerchantId != null) {
+      query.where((t) => t.normalizedMerchantId.equals(normalizedMerchantId));
+    }
+
+    return await query.getSingleOrNull();
+  }
+
+  /// Check if referenceId exists (UPI Ref, Bank Ref deduplication)
+  Future<bool> referenceIdExists(String refId) async {
+    final query = select(transactions)
+      ..where((t) => t.referenceId.equals(refId))
+      ..limit(1);
+    final result = await query.getSingleOrNull();
+    return result != null;
+  }
+
+  /// Check if internalId exists (cross-source deduplication)
+  Future<bool> internalIdExists(String internalId) async {
+    final query = select(transactions)
+      ..where((t) => t.internalId.equals(internalId))
+      ..limit(1);
+    final result = await query.getSingleOrNull();
+    return result != null;
+  }
+
+  /// Check if rawText hash exists (identical SMS deduplication)
+  Future<bool> rawTextHashExists(String textHash) async {
+    // Compare rawText directly by getting all and checking hash
+    // This is a simple approach - in production could store hash in DB column
+    final allTx = await getAllTransactions();
+    for (final tx in allTx) {
+      if (tx.rawText != null) {
+        final existingHash = md5.convert(utf8.encode(tx.rawText!)).toString();
+        if (existingHash == textHash) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   /// Get uncategorized transactions

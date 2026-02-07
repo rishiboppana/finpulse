@@ -4,11 +4,12 @@ import 'package:excel/excel.dart';
 import 'package:file_picker/file_picker.dart';
 
 import '../models/transaction.dart';
-import '../database/database.dart';
+import '../database/database.dart' hide Transaction;
 import 'database_transaction_service.dart';
 import 'service_initializer.dart';
 import 'gemini_service.dart';
 import 'app_logger.dart';
+import 'data_seeder_service.dart';
 
 /// Service for importing historical bank statement data
 /// Supports Excel (.xlsx) files with automatic column detection
@@ -81,7 +82,7 @@ class BankStatementImportService {
         data: {
           'sheetName': sheetName,
           'rows': sheet.maxRows,
-          'cols': sheet.maxCols,
+          'cols': sheet.rows.isNotEmpty ? sheet.rows.first.length : 0,
         },
       );
 
@@ -106,23 +107,19 @@ class BankStatementImportService {
         final transaction = await _parseRow(row, columnMap, rowIndex);
 
         if (transaction != null) {
-          // Add to database
-          final added = await ServiceInitializer.transactions.addTransaction(
+          // Add to database (returns void, so we just call it)
+          await ServiceInitializer.transactions.addTransaction(
             transaction,
           );
-          if (added) {
-            transactions.add(transaction);
-            imported++;
+          transactions.add(transaction);
+          imported++;
 
-            _logger.logTransactionSaved(
-              transactionId: transaction.id,
-              amount: transaction.amount,
-              source: 'bank_statement',
-              parsedByAI: false,
-            );
-          } else {
-            skipped++; // Duplicate
-          }
+          _logger.logTransactionSaved(
+            transactionId: transaction.id,
+            amount: transaction.amount,
+            source: 'bank_statement',
+            parsedByAI: false,
+          );
         } else {
           skipped++;
         }
@@ -271,6 +268,11 @@ class BankStatementImportService {
       merchantId = extracted['id'];
       merchantName = extracted['name'];
       category = extracted['category'];
+      
+      // If no category detected, assign a random one for demo purposes
+      if (category == null) {
+        category = DataSeederService.assignRandomCategory();
+      }
 
       // Generate unique ID
       final id =
