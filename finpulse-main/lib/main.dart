@@ -15,7 +15,6 @@ import 'screens/onboarding_screen.dart';
 import 'screens/chat_screen.dart';
 import 'screens/receipt_scan_screen.dart';
 import 'screens/account_aggregator_screen.dart';
-import 'services/merchant_learning_service.dart';
 import 'services/native_detection_service.dart';
 import 'services/notification_service.dart';
 import 'services/system_notification_service.dart';
@@ -52,7 +51,6 @@ void main() async {
   await SystemNotificationService.instance.init();
 
   // Legacy services (still needed for compatibility during transition)
-  await MerchantLearningService.instance.init();
   await NativeDetectionService.instance.init();
   await TransactionStorageService.instance.init();
 
@@ -3989,8 +3987,8 @@ class _StatsScreenState extends State<StatsScreen>
   // Data for charts
   Map<String, double> _categorySpending = {};
 
-  // Budgets
   Stream<List<Budget>>? _budgetsStream;
+  Stream<List<Goal>>? _goalsStream;
   Map<int, double> _budgetSpending = {}; // budgetId -> spent amount
 
   @override
@@ -3999,6 +3997,7 @@ class _StatsScreenState extends State<StatsScreen>
     _tabController = TabController(length: 2, vsync: this);
     _loadSpendingData();
     _budgetsStream = ServiceInitializer.database.budgetDao.watchAllBudgets();
+    _goalsStream = ServiceInitializer.database.goalDao.watchActiveGoals();
   }
 
   Future<void> _loadSpendingData() async {
@@ -4391,6 +4390,19 @@ class _StatsScreenState extends State<StatsScreen>
             ),
 
             const SizedBox(height: 16),
+
+            StreamBuilder<List<Goal>>(
+              stream: _goalsStream,
+              builder: (context, snapshot) {
+                final goals = snapshot.data ?? [];
+                return Column(
+                  children: [
+                    _buildGoalsSection(goals),
+                    const SizedBox(height: 20),
+                  ],
+                );
+              },
+            ),
 
             // Range tabs (Daily/Weekly/Monthly/Yearly)
             _RangeTabs(
@@ -4820,6 +4832,210 @@ class _StatsScreenState extends State<StatsScreen>
     );
 
     if (chosen != null) onSelect(chosen);
+  }
+
+  // ---------- Goals Section ----------
+
+  Widget _buildGoalsSection(List<Goal> goals) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              "ACTIVE GOALS", 
+              style: TextStyle(
+                color: Color(0xFF64748B),
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1.1,
+                fontSize: 12,
+              ),
+            ),
+            GestureDetector(
+              onTap: _showAddGoalDialog,
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF29D6C7).withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.add, size: 18, color: Color(0xFF29D6C7)),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 120,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: goals.isEmpty ? 1 : goals.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 12),
+            itemBuilder: (context, index) {
+              if (goals.isEmpty) {
+                return GestureDetector(
+                  onTap: _showAddGoalDialog,
+                  child: Container(
+                    width: 160,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFFE2E8F0), style: BorderStyle.solid),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.01),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: const [
+                        Icon(Icons.add_circle_outline, size: 32, color: Color(0xFF29D6C7)),
+                        SizedBox(height: 8),
+                        Text(
+                          "Set a Goal",
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF64748B),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }
+              final goal = goals[index];
+              final progress = (goal.targetAmount > 0) 
+                  ? (goal.currentAmount / goal.targetAmount).clamp(0.0, 1.0)
+                  : 0.0;
+              
+              return Container(
+                width: 160,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.03),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          goal.icon ?? "🎯", 
+                          style: const TextStyle(fontSize: 20),
+                        ),
+                        const Spacer(),
+                        if (progress >= 1.0)
+                          const Icon(Icons.check_circle, color: Colors.green, size: 18),
+                      ],
+                    ),
+                    const Spacer(),
+                    Text(
+                      goal.name,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: LinearProgressIndicator(
+                        value: progress,
+                        backgroundColor: const Color(0xFFF1F5F9),
+                        color: const Color(0xFF29D6C7),
+                        minHeight: 6,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      "\$${goal.currentAmount.toStringAsFixed(0)} / \$${goal.targetAmount.toStringAsFixed(0)}",
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: Color(0xFF94A3B8),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _showAddGoalDialog() async {
+    final nameController = TextEditingController();
+    final amountController = TextEditingController();
+    
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("New Financial Goal"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameController,
+              decoration: const InputDecoration(
+                labelText: "Goal Name (e.g., Bali Trip)",
+                prefixIcon: Icon(Icons.flag),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: amountController,
+              decoration: const InputDecoration(
+                labelText: "Target Amount",
+                prefixIcon: Icon(Icons.attach_money),
+              ),
+              keyboardType: TextInputType.number,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (nameController.text.isNotEmpty && amountController.text.isNotEmpty) {
+                final target = double.tryParse(amountController.text) ?? 0.0;
+                await ServiceInitializer.database.goalDao.createGoal(
+                  GoalsCompanion(
+                    name: Value(nameController.text),
+                    targetAmount: Value(target),
+                    currentAmount: const Value(0.0),
+                    createdAt: Value(DateTime.now().millisecondsSinceEpoch),
+                    updatedAt: Value(DateTime.now().millisecondsSinceEpoch),
+                  ),
+                );
+                if (mounted) Navigator.pop(context);
+              }
+            },
+            child: const Text("Create Goal"),
+          ),
+        ],
+      ),
+    );
   }
 }
 

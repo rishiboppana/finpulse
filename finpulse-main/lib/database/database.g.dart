@@ -4231,6 +4231,1069 @@ class MerchantsCompanion extends UpdateCompanion<Merchant> {
   }
 }
 
+class $GoalsTable extends Goals with TableInfo<$GoalsTable, Goal> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $GoalsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  @override
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+    'name',
+    aliasedName,
+    false,
+    additionalChecks: GeneratedColumn.checkTextLength(
+      minTextLength: 1,
+      maxTextLength: 100,
+    ),
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _targetAmountMeta = const VerificationMeta(
+    'targetAmount',
+  );
+  @override
+  late final GeneratedColumn<double> targetAmount = GeneratedColumn<double>(
+    'target_amount',
+    aliasedName,
+    false,
+    type: DriftSqlType.double,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _currentAmountMeta = const VerificationMeta(
+    'currentAmount',
+  );
+  @override
+  late final GeneratedColumn<double> currentAmount = GeneratedColumn<double>(
+    'current_amount',
+    aliasedName,
+    false,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0.0),
+  );
+  static const VerificationMeta _deadlineMeta = const VerificationMeta(
+    'deadline',
+  );
+  @override
+  late final GeneratedColumn<int> deadline = GeneratedColumn<int>(
+    'deadline',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _iconMeta = const VerificationMeta('icon');
+  @override
+  late final GeneratedColumn<String> icon = GeneratedColumn<String>(
+    'icon',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _colorMeta = const VerificationMeta('color');
+  @override
+  late final GeneratedColumn<int> color = GeneratedColumn<int>(
+    'color',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _isCompletedMeta = const VerificationMeta(
+    'isCompleted',
+  );
+  @override
+  late final GeneratedColumn<bool> isCompleted = GeneratedColumn<bool>(
+    'is_completed',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_completed" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _priorityMeta = const VerificationMeta(
+    'priority',
+  );
+  @override
+  late final GeneratedColumn<int> priority = GeneratedColumn<int>(
+    'priority',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    name,
+    targetAmount,
+    currentAmount,
+    deadline,
+    icon,
+    color,
+    isCompleted,
+    priority,
+    createdAt,
+    updatedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'goals';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<Goal> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('name')) {
+      context.handle(
+        _nameMeta,
+        name.isAcceptableOrUnknown(data['name']!, _nameMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_nameMeta);
+    }
+    if (data.containsKey('target_amount')) {
+      context.handle(
+        _targetAmountMeta,
+        targetAmount.isAcceptableOrUnknown(
+          data['target_amount']!,
+          _targetAmountMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_targetAmountMeta);
+    }
+    if (data.containsKey('current_amount')) {
+      context.handle(
+        _currentAmountMeta,
+        currentAmount.isAcceptableOrUnknown(
+          data['current_amount']!,
+          _currentAmountMeta,
+        ),
+      );
+    }
+    if (data.containsKey('deadline')) {
+      context.handle(
+        _deadlineMeta,
+        deadline.isAcceptableOrUnknown(data['deadline']!, _deadlineMeta),
+      );
+    }
+    if (data.containsKey('icon')) {
+      context.handle(
+        _iconMeta,
+        icon.isAcceptableOrUnknown(data['icon']!, _iconMeta),
+      );
+    }
+    if (data.containsKey('color')) {
+      context.handle(
+        _colorMeta,
+        color.isAcceptableOrUnknown(data['color']!, _colorMeta),
+      );
+    }
+    if (data.containsKey('is_completed')) {
+      context.handle(
+        _isCompletedMeta,
+        isCompleted.isAcceptableOrUnknown(
+          data['is_completed']!,
+          _isCompletedMeta,
+        ),
+      );
+    }
+    if (data.containsKey('priority')) {
+      context.handle(
+        _priorityMeta,
+        priority.isAcceptableOrUnknown(data['priority']!, _priorityMeta),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  Goal map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return Goal(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      name: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}name'],
+      )!,
+      targetAmount: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}target_amount'],
+      )!,
+      currentAmount: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}current_amount'],
+      )!,
+      deadline: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}deadline'],
+      ),
+      icon: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}icon'],
+      ),
+      color: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}color'],
+      ),
+      isCompleted: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_completed'],
+      )!,
+      priority: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}priority'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}created_at'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $GoalsTable createAlias(String alias) {
+    return $GoalsTable(attachedDatabase, alias);
+  }
+}
+
+class Goal extends DataClass implements Insertable<Goal> {
+  final int id;
+  final String name;
+  final double targetAmount;
+  final double currentAmount;
+  final int? deadline;
+  final String? icon;
+  final int? color;
+  final bool isCompleted;
+  final int priority;
+  final int createdAt;
+  final int updatedAt;
+  const Goal({
+    required this.id,
+    required this.name,
+    required this.targetAmount,
+    required this.currentAmount,
+    this.deadline,
+    this.icon,
+    this.color,
+    required this.isCompleted,
+    required this.priority,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['name'] = Variable<String>(name);
+    map['target_amount'] = Variable<double>(targetAmount);
+    map['current_amount'] = Variable<double>(currentAmount);
+    if (!nullToAbsent || deadline != null) {
+      map['deadline'] = Variable<int>(deadline);
+    }
+    if (!nullToAbsent || icon != null) {
+      map['icon'] = Variable<String>(icon);
+    }
+    if (!nullToAbsent || color != null) {
+      map['color'] = Variable<int>(color);
+    }
+    map['is_completed'] = Variable<bool>(isCompleted);
+    map['priority'] = Variable<int>(priority);
+    map['created_at'] = Variable<int>(createdAt);
+    map['updated_at'] = Variable<int>(updatedAt);
+    return map;
+  }
+
+  GoalsCompanion toCompanion(bool nullToAbsent) {
+    return GoalsCompanion(
+      id: Value(id),
+      name: Value(name),
+      targetAmount: Value(targetAmount),
+      currentAmount: Value(currentAmount),
+      deadline: deadline == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deadline),
+      icon: icon == null && nullToAbsent ? const Value.absent() : Value(icon),
+      color: color == null && nullToAbsent
+          ? const Value.absent()
+          : Value(color),
+      isCompleted: Value(isCompleted),
+      priority: Value(priority),
+      createdAt: Value(createdAt),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory Goal.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return Goal(
+      id: serializer.fromJson<int>(json['id']),
+      name: serializer.fromJson<String>(json['name']),
+      targetAmount: serializer.fromJson<double>(json['targetAmount']),
+      currentAmount: serializer.fromJson<double>(json['currentAmount']),
+      deadline: serializer.fromJson<int?>(json['deadline']),
+      icon: serializer.fromJson<String?>(json['icon']),
+      color: serializer.fromJson<int?>(json['color']),
+      isCompleted: serializer.fromJson<bool>(json['isCompleted']),
+      priority: serializer.fromJson<int>(json['priority']),
+      createdAt: serializer.fromJson<int>(json['createdAt']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'name': serializer.toJson<String>(name),
+      'targetAmount': serializer.toJson<double>(targetAmount),
+      'currentAmount': serializer.toJson<double>(currentAmount),
+      'deadline': serializer.toJson<int?>(deadline),
+      'icon': serializer.toJson<String?>(icon),
+      'color': serializer.toJson<int?>(color),
+      'isCompleted': serializer.toJson<bool>(isCompleted),
+      'priority': serializer.toJson<int>(priority),
+      'createdAt': serializer.toJson<int>(createdAt),
+      'updatedAt': serializer.toJson<int>(updatedAt),
+    };
+  }
+
+  Goal copyWith({
+    int? id,
+    String? name,
+    double? targetAmount,
+    double? currentAmount,
+    Value<int?> deadline = const Value.absent(),
+    Value<String?> icon = const Value.absent(),
+    Value<int?> color = const Value.absent(),
+    bool? isCompleted,
+    int? priority,
+    int? createdAt,
+    int? updatedAt,
+  }) => Goal(
+    id: id ?? this.id,
+    name: name ?? this.name,
+    targetAmount: targetAmount ?? this.targetAmount,
+    currentAmount: currentAmount ?? this.currentAmount,
+    deadline: deadline.present ? deadline.value : this.deadline,
+    icon: icon.present ? icon.value : this.icon,
+    color: color.present ? color.value : this.color,
+    isCompleted: isCompleted ?? this.isCompleted,
+    priority: priority ?? this.priority,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  Goal copyWithCompanion(GoalsCompanion data) {
+    return Goal(
+      id: data.id.present ? data.id.value : this.id,
+      name: data.name.present ? data.name.value : this.name,
+      targetAmount: data.targetAmount.present
+          ? data.targetAmount.value
+          : this.targetAmount,
+      currentAmount: data.currentAmount.present
+          ? data.currentAmount.value
+          : this.currentAmount,
+      deadline: data.deadline.present ? data.deadline.value : this.deadline,
+      icon: data.icon.present ? data.icon.value : this.icon,
+      color: data.color.present ? data.color.value : this.color,
+      isCompleted: data.isCompleted.present
+          ? data.isCompleted.value
+          : this.isCompleted,
+      priority: data.priority.present ? data.priority.value : this.priority,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('Goal(')
+          ..write('id: $id, ')
+          ..write('name: $name, ')
+          ..write('targetAmount: $targetAmount, ')
+          ..write('currentAmount: $currentAmount, ')
+          ..write('deadline: $deadline, ')
+          ..write('icon: $icon, ')
+          ..write('color: $color, ')
+          ..write('isCompleted: $isCompleted, ')
+          ..write('priority: $priority, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    name,
+    targetAmount,
+    currentAmount,
+    deadline,
+    icon,
+    color,
+    isCompleted,
+    priority,
+    createdAt,
+    updatedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is Goal &&
+          other.id == this.id &&
+          other.name == this.name &&
+          other.targetAmount == this.targetAmount &&
+          other.currentAmount == this.currentAmount &&
+          other.deadline == this.deadline &&
+          other.icon == this.icon &&
+          other.color == this.color &&
+          other.isCompleted == this.isCompleted &&
+          other.priority == this.priority &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt);
+}
+
+class GoalsCompanion extends UpdateCompanion<Goal> {
+  final Value<int> id;
+  final Value<String> name;
+  final Value<double> targetAmount;
+  final Value<double> currentAmount;
+  final Value<int?> deadline;
+  final Value<String?> icon;
+  final Value<int?> color;
+  final Value<bool> isCompleted;
+  final Value<int> priority;
+  final Value<int> createdAt;
+  final Value<int> updatedAt;
+  const GoalsCompanion({
+    this.id = const Value.absent(),
+    this.name = const Value.absent(),
+    this.targetAmount = const Value.absent(),
+    this.currentAmount = const Value.absent(),
+    this.deadline = const Value.absent(),
+    this.icon = const Value.absent(),
+    this.color = const Value.absent(),
+    this.isCompleted = const Value.absent(),
+    this.priority = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+  });
+  GoalsCompanion.insert({
+    this.id = const Value.absent(),
+    required String name,
+    required double targetAmount,
+    this.currentAmount = const Value.absent(),
+    this.deadline = const Value.absent(),
+    this.icon = const Value.absent(),
+    this.color = const Value.absent(),
+    this.isCompleted = const Value.absent(),
+    this.priority = const Value.absent(),
+    required int createdAt,
+    required int updatedAt,
+  }) : name = Value(name),
+       targetAmount = Value(targetAmount),
+       createdAt = Value(createdAt),
+       updatedAt = Value(updatedAt);
+  static Insertable<Goal> custom({
+    Expression<int>? id,
+    Expression<String>? name,
+    Expression<double>? targetAmount,
+    Expression<double>? currentAmount,
+    Expression<int>? deadline,
+    Expression<String>? icon,
+    Expression<int>? color,
+    Expression<bool>? isCompleted,
+    Expression<int>? priority,
+    Expression<int>? createdAt,
+    Expression<int>? updatedAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (name != null) 'name': name,
+      if (targetAmount != null) 'target_amount': targetAmount,
+      if (currentAmount != null) 'current_amount': currentAmount,
+      if (deadline != null) 'deadline': deadline,
+      if (icon != null) 'icon': icon,
+      if (color != null) 'color': color,
+      if (isCompleted != null) 'is_completed': isCompleted,
+      if (priority != null) 'priority': priority,
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+    });
+  }
+
+  GoalsCompanion copyWith({
+    Value<int>? id,
+    Value<String>? name,
+    Value<double>? targetAmount,
+    Value<double>? currentAmount,
+    Value<int?>? deadline,
+    Value<String?>? icon,
+    Value<int?>? color,
+    Value<bool>? isCompleted,
+    Value<int>? priority,
+    Value<int>? createdAt,
+    Value<int>? updatedAt,
+  }) {
+    return GoalsCompanion(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      targetAmount: targetAmount ?? this.targetAmount,
+      currentAmount: currentAmount ?? this.currentAmount,
+      deadline: deadline ?? this.deadline,
+      icon: icon ?? this.icon,
+      color: color ?? this.color,
+      isCompleted: isCompleted ?? this.isCompleted,
+      priority: priority ?? this.priority,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
+    if (targetAmount.present) {
+      map['target_amount'] = Variable<double>(targetAmount.value);
+    }
+    if (currentAmount.present) {
+      map['current_amount'] = Variable<double>(currentAmount.value);
+    }
+    if (deadline.present) {
+      map['deadline'] = Variable<int>(deadline.value);
+    }
+    if (icon.present) {
+      map['icon'] = Variable<String>(icon.value);
+    }
+    if (color.present) {
+      map['color'] = Variable<int>(color.value);
+    }
+    if (isCompleted.present) {
+      map['is_completed'] = Variable<bool>(isCompleted.value);
+    }
+    if (priority.present) {
+      map['priority'] = Variable<int>(priority.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<int>(createdAt.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('GoalsCompanion(')
+          ..write('id: $id, ')
+          ..write('name: $name, ')
+          ..write('targetAmount: $targetAmount, ')
+          ..write('currentAmount: $currentAmount, ')
+          ..write('deadline: $deadline, ')
+          ..write('icon: $icon, ')
+          ..write('color: $color, ')
+          ..write('isCompleted: $isCompleted, ')
+          ..write('priority: $priority, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $MerchantIntelligenceTable extends MerchantIntelligence
+    with TableInfo<$MerchantIntelligenceTable, MerchantIntelligenceData> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MerchantIntelligenceTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _historySummaryMeta = const VerificationMeta(
+    'historySummary',
+  );
+  @override
+  late final GeneratedColumn<String> historySummary = GeneratedColumn<String>(
+    'history_summary',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _spendingPatternsMeta = const VerificationMeta(
+    'spendingPatterns',
+  );
+  @override
+  late final GeneratedColumn<String> spendingPatterns = GeneratedColumn<String>(
+    'spending_patterns',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _typicalAmountMeta = const VerificationMeta(
+    'typicalAmount',
+  );
+  @override
+  late final GeneratedColumn<double> typicalAmount = GeneratedColumn<double>(
+    'typical_amount',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _lastAnalyzedAtMeta = const VerificationMeta(
+    'lastAnalyzedAt',
+  );
+  @override
+  late final GeneratedColumn<int> lastAnalyzedAt = GeneratedColumn<int>(
+    'last_analyzed_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    historySummary,
+    spendingPatterns,
+    typicalAmount,
+    lastAnalyzedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'merchant_intelligence';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<MerchantIntelligenceData> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('history_summary')) {
+      context.handle(
+        _historySummaryMeta,
+        historySummary.isAcceptableOrUnknown(
+          data['history_summary']!,
+          _historySummaryMeta,
+        ),
+      );
+    }
+    if (data.containsKey('spending_patterns')) {
+      context.handle(
+        _spendingPatternsMeta,
+        spendingPatterns.isAcceptableOrUnknown(
+          data['spending_patterns']!,
+          _spendingPatternsMeta,
+        ),
+      );
+    }
+    if (data.containsKey('typical_amount')) {
+      context.handle(
+        _typicalAmountMeta,
+        typicalAmount.isAcceptableOrUnknown(
+          data['typical_amount']!,
+          _typicalAmountMeta,
+        ),
+      );
+    }
+    if (data.containsKey('last_analyzed_at')) {
+      context.handle(
+        _lastAnalyzedAtMeta,
+        lastAnalyzedAt.isAcceptableOrUnknown(
+          data['last_analyzed_at']!,
+          _lastAnalyzedAtMeta,
+        ),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  MerchantIntelligenceData map(
+    Map<String, dynamic> data, {
+    String? tablePrefix,
+  }) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MerchantIntelligenceData(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      historySummary: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}history_summary'],
+      ),
+      spendingPatterns: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}spending_patterns'],
+      ),
+      typicalAmount: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}typical_amount'],
+      ),
+      lastAnalyzedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}last_analyzed_at'],
+      ),
+    );
+  }
+
+  @override
+  $MerchantIntelligenceTable createAlias(String alias) {
+    return $MerchantIntelligenceTable(attachedDatabase, alias);
+  }
+}
+
+class MerchantIntelligenceData extends DataClass
+    implements Insertable<MerchantIntelligenceData> {
+  final String id;
+  final String? historySummary;
+  final String? spendingPatterns;
+  final double? typicalAmount;
+  final int? lastAnalyzedAt;
+  const MerchantIntelligenceData({
+    required this.id,
+    this.historySummary,
+    this.spendingPatterns,
+    this.typicalAmount,
+    this.lastAnalyzedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    if (!nullToAbsent || historySummary != null) {
+      map['history_summary'] = Variable<String>(historySummary);
+    }
+    if (!nullToAbsent || spendingPatterns != null) {
+      map['spending_patterns'] = Variable<String>(spendingPatterns);
+    }
+    if (!nullToAbsent || typicalAmount != null) {
+      map['typical_amount'] = Variable<double>(typicalAmount);
+    }
+    if (!nullToAbsent || lastAnalyzedAt != null) {
+      map['last_analyzed_at'] = Variable<int>(lastAnalyzedAt);
+    }
+    return map;
+  }
+
+  MerchantIntelligenceCompanion toCompanion(bool nullToAbsent) {
+    return MerchantIntelligenceCompanion(
+      id: Value(id),
+      historySummary: historySummary == null && nullToAbsent
+          ? const Value.absent()
+          : Value(historySummary),
+      spendingPatterns: spendingPatterns == null && nullToAbsent
+          ? const Value.absent()
+          : Value(spendingPatterns),
+      typicalAmount: typicalAmount == null && nullToAbsent
+          ? const Value.absent()
+          : Value(typicalAmount),
+      lastAnalyzedAt: lastAnalyzedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastAnalyzedAt),
+    );
+  }
+
+  factory MerchantIntelligenceData.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MerchantIntelligenceData(
+      id: serializer.fromJson<String>(json['id']),
+      historySummary: serializer.fromJson<String?>(json['historySummary']),
+      spendingPatterns: serializer.fromJson<String?>(json['spendingPatterns']),
+      typicalAmount: serializer.fromJson<double?>(json['typicalAmount']),
+      lastAnalyzedAt: serializer.fromJson<int?>(json['lastAnalyzedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'historySummary': serializer.toJson<String?>(historySummary),
+      'spendingPatterns': serializer.toJson<String?>(spendingPatterns),
+      'typicalAmount': serializer.toJson<double?>(typicalAmount),
+      'lastAnalyzedAt': serializer.toJson<int?>(lastAnalyzedAt),
+    };
+  }
+
+  MerchantIntelligenceData copyWith({
+    String? id,
+    Value<String?> historySummary = const Value.absent(),
+    Value<String?> spendingPatterns = const Value.absent(),
+    Value<double?> typicalAmount = const Value.absent(),
+    Value<int?> lastAnalyzedAt = const Value.absent(),
+  }) => MerchantIntelligenceData(
+    id: id ?? this.id,
+    historySummary: historySummary.present
+        ? historySummary.value
+        : this.historySummary,
+    spendingPatterns: spendingPatterns.present
+        ? spendingPatterns.value
+        : this.spendingPatterns,
+    typicalAmount: typicalAmount.present
+        ? typicalAmount.value
+        : this.typicalAmount,
+    lastAnalyzedAt: lastAnalyzedAt.present
+        ? lastAnalyzedAt.value
+        : this.lastAnalyzedAt,
+  );
+  MerchantIntelligenceData copyWithCompanion(
+    MerchantIntelligenceCompanion data,
+  ) {
+    return MerchantIntelligenceData(
+      id: data.id.present ? data.id.value : this.id,
+      historySummary: data.historySummary.present
+          ? data.historySummary.value
+          : this.historySummary,
+      spendingPatterns: data.spendingPatterns.present
+          ? data.spendingPatterns.value
+          : this.spendingPatterns,
+      typicalAmount: data.typicalAmount.present
+          ? data.typicalAmount.value
+          : this.typicalAmount,
+      lastAnalyzedAt: data.lastAnalyzedAt.present
+          ? data.lastAnalyzedAt.value
+          : this.lastAnalyzedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MerchantIntelligenceData(')
+          ..write('id: $id, ')
+          ..write('historySummary: $historySummary, ')
+          ..write('spendingPatterns: $spendingPatterns, ')
+          ..write('typicalAmount: $typicalAmount, ')
+          ..write('lastAnalyzedAt: $lastAnalyzedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    historySummary,
+    spendingPatterns,
+    typicalAmount,
+    lastAnalyzedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MerchantIntelligenceData &&
+          other.id == this.id &&
+          other.historySummary == this.historySummary &&
+          other.spendingPatterns == this.spendingPatterns &&
+          other.typicalAmount == this.typicalAmount &&
+          other.lastAnalyzedAt == this.lastAnalyzedAt);
+}
+
+class MerchantIntelligenceCompanion
+    extends UpdateCompanion<MerchantIntelligenceData> {
+  final Value<String> id;
+  final Value<String?> historySummary;
+  final Value<String?> spendingPatterns;
+  final Value<double?> typicalAmount;
+  final Value<int?> lastAnalyzedAt;
+  final Value<int> rowid;
+  const MerchantIntelligenceCompanion({
+    this.id = const Value.absent(),
+    this.historySummary = const Value.absent(),
+    this.spendingPatterns = const Value.absent(),
+    this.typicalAmount = const Value.absent(),
+    this.lastAnalyzedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  MerchantIntelligenceCompanion.insert({
+    required String id,
+    this.historySummary = const Value.absent(),
+    this.spendingPatterns = const Value.absent(),
+    this.typicalAmount = const Value.absent(),
+    this.lastAnalyzedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : id = Value(id);
+  static Insertable<MerchantIntelligenceData> custom({
+    Expression<String>? id,
+    Expression<String>? historySummary,
+    Expression<String>? spendingPatterns,
+    Expression<double>? typicalAmount,
+    Expression<int>? lastAnalyzedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (historySummary != null) 'history_summary': historySummary,
+      if (spendingPatterns != null) 'spending_patterns': spendingPatterns,
+      if (typicalAmount != null) 'typical_amount': typicalAmount,
+      if (lastAnalyzedAt != null) 'last_analyzed_at': lastAnalyzedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  MerchantIntelligenceCompanion copyWith({
+    Value<String>? id,
+    Value<String?>? historySummary,
+    Value<String?>? spendingPatterns,
+    Value<double?>? typicalAmount,
+    Value<int?>? lastAnalyzedAt,
+    Value<int>? rowid,
+  }) {
+    return MerchantIntelligenceCompanion(
+      id: id ?? this.id,
+      historySummary: historySummary ?? this.historySummary,
+      spendingPatterns: spendingPatterns ?? this.spendingPatterns,
+      typicalAmount: typicalAmount ?? this.typicalAmount,
+      lastAnalyzedAt: lastAnalyzedAt ?? this.lastAnalyzedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (historySummary.present) {
+      map['history_summary'] = Variable<String>(historySummary.value);
+    }
+    if (spendingPatterns.present) {
+      map['spending_patterns'] = Variable<String>(spendingPatterns.value);
+    }
+    if (typicalAmount.present) {
+      map['typical_amount'] = Variable<double>(typicalAmount.value);
+    }
+    if (lastAnalyzedAt.present) {
+      map['last_analyzed_at'] = Variable<int>(lastAnalyzedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MerchantIntelligenceCompanion(')
+          ..write('id: $id, ')
+          ..write('historySummary: $historySummary, ')
+          ..write('spendingPatterns: $spendingPatterns, ')
+          ..write('typicalAmount: $typicalAmount, ')
+          ..write('lastAnalyzedAt: $lastAnalyzedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $BudgetsTable extends Budgets with TableInfo<$BudgetsTable, Budget> {
   @override
   final GeneratedDatabase attachedDatabase;
@@ -6649,6 +7712,9 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     this,
   );
   late final $MerchantsTable merchants = $MerchantsTable(this);
+  late final $GoalsTable goals = $GoalsTable(this);
+  late final $MerchantIntelligenceTable merchantIntelligence =
+      $MerchantIntelligenceTable(this);
   late final $BudgetsTable budgets = $BudgetsTable(this);
   late final $InsightsTable insights = $InsightsTable(this);
   late final $ChatMessagesTable chatMessages = $ChatMessagesTable(this);
@@ -6666,6 +7732,9 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final MerchantDao merchantDao = MerchantDao(this as AppDatabase);
   late final BudgetDao budgetDao = BudgetDao(this as AppDatabase);
   late final InsightDao insightDao = InsightDao(this as AppDatabase);
+  late final GoalDao goalDao = GoalDao(this as AppDatabase);
+  late final MerchantIntelligenceDao merchantIntelligenceDao =
+      MerchantIntelligenceDao(this as AppDatabase);
   late final ChatDao chatDao = ChatDao(this as AppDatabase);
   late final PreferenceDao preferenceDao = PreferenceDao(this as AppDatabase);
   @override
@@ -6677,6 +7746,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     userResponses,
     customCategories,
     merchants,
+    goals,
+    merchantIntelligence,
     budgets,
     insights,
     chatMessages,
@@ -8781,6 +9852,537 @@ typedef $$MerchantsTableProcessedTableManager =
       Merchant,
       PrefetchHooks Function()
     >;
+typedef $$GoalsTableCreateCompanionBuilder =
+    GoalsCompanion Function({
+      Value<int> id,
+      required String name,
+      required double targetAmount,
+      Value<double> currentAmount,
+      Value<int?> deadline,
+      Value<String?> icon,
+      Value<int?> color,
+      Value<bool> isCompleted,
+      Value<int> priority,
+      required int createdAt,
+      required int updatedAt,
+    });
+typedef $$GoalsTableUpdateCompanionBuilder =
+    GoalsCompanion Function({
+      Value<int> id,
+      Value<String> name,
+      Value<double> targetAmount,
+      Value<double> currentAmount,
+      Value<int?> deadline,
+      Value<String?> icon,
+      Value<int?> color,
+      Value<bool> isCompleted,
+      Value<int> priority,
+      Value<int> createdAt,
+      Value<int> updatedAt,
+    });
+
+class $$GoalsTableFilterComposer extends Composer<_$AppDatabase, $GoalsTable> {
+  $$GoalsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get targetAmount => $composableBuilder(
+    column: $table.targetAmount,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get currentAmount => $composableBuilder(
+    column: $table.currentAmount,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get deadline => $composableBuilder(
+    column: $table.deadline,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get icon => $composableBuilder(
+    column: $table.icon,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get color => $composableBuilder(
+    column: $table.color,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isCompleted => $composableBuilder(
+    column: $table.isCompleted,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get priority => $composableBuilder(
+    column: $table.priority,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$GoalsTableOrderingComposer
+    extends Composer<_$AppDatabase, $GoalsTable> {
+  $$GoalsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get targetAmount => $composableBuilder(
+    column: $table.targetAmount,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get currentAmount => $composableBuilder(
+    column: $table.currentAmount,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get deadline => $composableBuilder(
+    column: $table.deadline,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get icon => $composableBuilder(
+    column: $table.icon,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get color => $composableBuilder(
+    column: $table.color,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isCompleted => $composableBuilder(
+    column: $table.isCompleted,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get priority => $composableBuilder(
+    column: $table.priority,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$GoalsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $GoalsTable> {
+  $$GoalsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<double> get targetAmount => $composableBuilder(
+    column: $table.targetAmount,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<double> get currentAmount => $composableBuilder(
+    column: $table.currentAmount,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get deadline =>
+      $composableBuilder(column: $table.deadline, builder: (column) => column);
+
+  GeneratedColumn<String> get icon =>
+      $composableBuilder(column: $table.icon, builder: (column) => column);
+
+  GeneratedColumn<int> get color =>
+      $composableBuilder(column: $table.color, builder: (column) => column);
+
+  GeneratedColumn<bool> get isCompleted => $composableBuilder(
+    column: $table.isCompleted,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get priority =>
+      $composableBuilder(column: $table.priority, builder: (column) => column);
+
+  GeneratedColumn<int> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$GoalsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $GoalsTable,
+          Goal,
+          $$GoalsTableFilterComposer,
+          $$GoalsTableOrderingComposer,
+          $$GoalsTableAnnotationComposer,
+          $$GoalsTableCreateCompanionBuilder,
+          $$GoalsTableUpdateCompanionBuilder,
+          (Goal, BaseReferences<_$AppDatabase, $GoalsTable, Goal>),
+          Goal,
+          PrefetchHooks Function()
+        > {
+  $$GoalsTableTableManager(_$AppDatabase db, $GoalsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$GoalsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$GoalsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$GoalsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<String> name = const Value.absent(),
+                Value<double> targetAmount = const Value.absent(),
+                Value<double> currentAmount = const Value.absent(),
+                Value<int?> deadline = const Value.absent(),
+                Value<String?> icon = const Value.absent(),
+                Value<int?> color = const Value.absent(),
+                Value<bool> isCompleted = const Value.absent(),
+                Value<int> priority = const Value.absent(),
+                Value<int> createdAt = const Value.absent(),
+                Value<int> updatedAt = const Value.absent(),
+              }) => GoalsCompanion(
+                id: id,
+                name: name,
+                targetAmount: targetAmount,
+                currentAmount: currentAmount,
+                deadline: deadline,
+                icon: icon,
+                color: color,
+                isCompleted: isCompleted,
+                priority: priority,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required String name,
+                required double targetAmount,
+                Value<double> currentAmount = const Value.absent(),
+                Value<int?> deadline = const Value.absent(),
+                Value<String?> icon = const Value.absent(),
+                Value<int?> color = const Value.absent(),
+                Value<bool> isCompleted = const Value.absent(),
+                Value<int> priority = const Value.absent(),
+                required int createdAt,
+                required int updatedAt,
+              }) => GoalsCompanion.insert(
+                id: id,
+                name: name,
+                targetAmount: targetAmount,
+                currentAmount: currentAmount,
+                deadline: deadline,
+                icon: icon,
+                color: color,
+                isCompleted: isCompleted,
+                priority: priority,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$GoalsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $GoalsTable,
+      Goal,
+      $$GoalsTableFilterComposer,
+      $$GoalsTableOrderingComposer,
+      $$GoalsTableAnnotationComposer,
+      $$GoalsTableCreateCompanionBuilder,
+      $$GoalsTableUpdateCompanionBuilder,
+      (Goal, BaseReferences<_$AppDatabase, $GoalsTable, Goal>),
+      Goal,
+      PrefetchHooks Function()
+    >;
+typedef $$MerchantIntelligenceTableCreateCompanionBuilder =
+    MerchantIntelligenceCompanion Function({
+      required String id,
+      Value<String?> historySummary,
+      Value<String?> spendingPatterns,
+      Value<double?> typicalAmount,
+      Value<int?> lastAnalyzedAt,
+      Value<int> rowid,
+    });
+typedef $$MerchantIntelligenceTableUpdateCompanionBuilder =
+    MerchantIntelligenceCompanion Function({
+      Value<String> id,
+      Value<String?> historySummary,
+      Value<String?> spendingPatterns,
+      Value<double?> typicalAmount,
+      Value<int?> lastAnalyzedAt,
+      Value<int> rowid,
+    });
+
+class $$MerchantIntelligenceTableFilterComposer
+    extends Composer<_$AppDatabase, $MerchantIntelligenceTable> {
+  $$MerchantIntelligenceTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get historySummary => $composableBuilder(
+    column: $table.historySummary,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get spendingPatterns => $composableBuilder(
+    column: $table.spendingPatterns,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get typicalAmount => $composableBuilder(
+    column: $table.typicalAmount,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get lastAnalyzedAt => $composableBuilder(
+    column: $table.lastAnalyzedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$MerchantIntelligenceTableOrderingComposer
+    extends Composer<_$AppDatabase, $MerchantIntelligenceTable> {
+  $$MerchantIntelligenceTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get historySummary => $composableBuilder(
+    column: $table.historySummary,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get spendingPatterns => $composableBuilder(
+    column: $table.spendingPatterns,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get typicalAmount => $composableBuilder(
+    column: $table.typicalAmount,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get lastAnalyzedAt => $composableBuilder(
+    column: $table.lastAnalyzedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$MerchantIntelligenceTableAnnotationComposer
+    extends Composer<_$AppDatabase, $MerchantIntelligenceTable> {
+  $$MerchantIntelligenceTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get historySummary => $composableBuilder(
+    column: $table.historySummary,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get spendingPatterns => $composableBuilder(
+    column: $table.spendingPatterns,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<double> get typicalAmount => $composableBuilder(
+    column: $table.typicalAmount,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get lastAnalyzedAt => $composableBuilder(
+    column: $table.lastAnalyzedAt,
+    builder: (column) => column,
+  );
+}
+
+class $$MerchantIntelligenceTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $MerchantIntelligenceTable,
+          MerchantIntelligenceData,
+          $$MerchantIntelligenceTableFilterComposer,
+          $$MerchantIntelligenceTableOrderingComposer,
+          $$MerchantIntelligenceTableAnnotationComposer,
+          $$MerchantIntelligenceTableCreateCompanionBuilder,
+          $$MerchantIntelligenceTableUpdateCompanionBuilder,
+          (
+            MerchantIntelligenceData,
+            BaseReferences<
+              _$AppDatabase,
+              $MerchantIntelligenceTable,
+              MerchantIntelligenceData
+            >,
+          ),
+          MerchantIntelligenceData,
+          PrefetchHooks Function()
+        > {
+  $$MerchantIntelligenceTableTableManager(
+    _$AppDatabase db,
+    $MerchantIntelligenceTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MerchantIntelligenceTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$MerchantIntelligenceTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$MerchantIntelligenceTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String?> historySummary = const Value.absent(),
+                Value<String?> spendingPatterns = const Value.absent(),
+                Value<double?> typicalAmount = const Value.absent(),
+                Value<int?> lastAnalyzedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MerchantIntelligenceCompanion(
+                id: id,
+                historySummary: historySummary,
+                spendingPatterns: spendingPatterns,
+                typicalAmount: typicalAmount,
+                lastAnalyzedAt: lastAnalyzedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                Value<String?> historySummary = const Value.absent(),
+                Value<String?> spendingPatterns = const Value.absent(),
+                Value<double?> typicalAmount = const Value.absent(),
+                Value<int?> lastAnalyzedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MerchantIntelligenceCompanion.insert(
+                id: id,
+                historySummary: historySummary,
+                spendingPatterns: spendingPatterns,
+                typicalAmount: typicalAmount,
+                lastAnalyzedAt: lastAnalyzedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$MerchantIntelligenceTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $MerchantIntelligenceTable,
+      MerchantIntelligenceData,
+      $$MerchantIntelligenceTableFilterComposer,
+      $$MerchantIntelligenceTableOrderingComposer,
+      $$MerchantIntelligenceTableAnnotationComposer,
+      $$MerchantIntelligenceTableCreateCompanionBuilder,
+      $$MerchantIntelligenceTableUpdateCompanionBuilder,
+      (
+        MerchantIntelligenceData,
+        BaseReferences<
+          _$AppDatabase,
+          $MerchantIntelligenceTable,
+          MerchantIntelligenceData
+        >,
+      ),
+      MerchantIntelligenceData,
+      PrefetchHooks Function()
+    >;
 typedef $$BudgetsTableCreateCompanionBuilder =
     BudgetsCompanion Function({
       Value<int> id,
@@ -10003,6 +11605,10 @@ class $AppDatabaseManager {
       $$CustomCategoriesTableTableManager(_db, _db.customCategories);
   $$MerchantsTableTableManager get merchants =>
       $$MerchantsTableTableManager(_db, _db.merchants);
+  $$GoalsTableTableManager get goals =>
+      $$GoalsTableTableManager(_db, _db.goals);
+  $$MerchantIntelligenceTableTableManager get merchantIntelligence =>
+      $$MerchantIntelligenceTableTableManager(_db, _db.merchantIntelligence);
   $$BudgetsTableTableManager get budgets =>
       $$BudgetsTableTableManager(_db, _db.budgets);
   $$InsightsTableTableManager get insights =>

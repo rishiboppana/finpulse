@@ -5,10 +5,10 @@ import 'package:permission_handler/permission_handler.dart';
 import '../models/transaction.dart';
 import '../services/transaction_parser.dart';
 import '../services/gemini_service.dart';
-import '../services/merchant_learning_service.dart';
 import '../services/notification_service.dart';
 import '../services/transaction_storage_service.dart';
 import '../services/service_initializer.dart';
+import '../utils/snackbars.dart'; // Assuming this exists, if not use standard SnackBar
 
 /// Mock Trigger Screen for Hackathon Demo
 /// Allows triggering simulated payment notifications to test the AI pipeline.
@@ -487,19 +487,21 @@ class GoldenWindowSheetState extends State<GoldenWindowSheet> {
     setState(() => _isListening = false);
   }
 
-  void _checkLearnedMerchant() {
+  Future<void> _checkLearnedMerchant() async {
     final merchantId = widget.transaction.rawMerchantId;
     if (merchantId != null) {
-      final mapping = MerchantLearningService.instance.getMapping(merchantId);
-      if (mapping != null) {
+      final id = TransactionParser.normalizeMerchantId(merchantId);
+      final merchant = await ServiceInitializer.database.merchantDao.getById(id);
+      
+      if (merchant != null && merchant.category != null) {
         setState(() {
           // Pre-fill friendly name if available
-          if (mapping.friendlyName != null) {
-            _tagController.text = mapping.friendlyName!;
+          if (merchant.friendlyName != null) {
+            _tagController.text = merchant.friendlyName!;
           }
           
           // Match category from list
-          final categoryName = mapping.category;
+          final categoryName = merchant.category!;
           _selectedCategory = _categories.firstWhere(
             (c) => c.contains(categoryName),
             orElse: () => _categories.last, // Fallback to 'Other'
@@ -517,9 +519,25 @@ class GoldenWindowSheetState extends State<GoldenWindowSheet> {
   }
 
   Future<void> _submitTag() async {
-    final tag = _tagController.text.trim().isNotEmpty
-        ? _tagController.text.trim()
-        : _selectedCategory;
+    // 1. If user typed/spoke text -> Natural Language Processing (Social Brain)
+    if (_tagController.text.trim().isNotEmpty) {
+      final input = _tagController.text.trim();
+      
+      Navigator.pop(context); // Close sheet immediately
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBars.info('FinPulse AI is processing your input...'),
+      );
+
+      await ServiceInitializer.interactions.processUserInput(
+        transactionId: widget.transaction.id,
+        input: input,
+        inputMethod: _isListening ? 'voice' : 'text', // _isListening might be false if stopped, but we can guess
+      );
+      return;
+    }
+
+    // 2. If Chip selected -> Explicit Categorization
+    final tag = _selectedCategory;
 
     if (tag != null) {
       // Save to merchant learning DB
@@ -528,13 +546,21 @@ class GoldenWindowSheetState extends State<GoldenWindowSheet> {
       final categoryName = tag.replaceAll(RegExp(r'[^\w\s]'), '').trim();
       
       if (merchantId != null) {
-        await MerchantLearningService.instance.learnMerchant(
-          rawMerchantId: merchantId,
-          category: categoryName,
-          friendlyName: _tagController.text.trim().isNotEmpty 
+        final id = TransactionParser.normalizeMerchantId(merchantId);
+        final friendlyName = _tagController.text.trim().isNotEmpty 
               ? _tagController.text.trim() 
-              : null,
+              : null;
+              
+        await ServiceInitializer.database.merchantDao.learnCategory(
+          id: id,
+          rawId: merchantId,
+          category: categoryName,
+          amount: widget.transaction.amount,
         );
+        
+        if (friendlyName != null) {
+           await ServiceInitializer.database.merchantDao.setFriendlyName(id, friendlyName);
+        }
       }
       
       // Update transaction with category in database

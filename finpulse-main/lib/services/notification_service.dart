@@ -3,7 +3,8 @@ import 'package:drift/drift.dart';
 
 import '../models/transaction.dart';
 import '../database/database.dart' hide Transaction;
-import 'merchant_learning_service.dart';
+import '../services/service_initializer.dart';
+import '../services/transaction_parser.dart';
 import 'app_logger.dart';
 
 /// Notification Service for FinPulse.
@@ -49,17 +50,28 @@ class NotificationService {
   void triggerGoldenWindow(Transaction transaction) {
     debugPrint('[NotificationService] 🪟 triggerGoldenWindow called for amount: ${transaction.amount}');
     
-    // Check if we already know this merchant
-    final learning = MerchantLearningService.instance;
-    final existingMapping = transaction.rawMerchantId != null
-        ? learning.getMapping(transaction.rawMerchantId!)
-        : null;
+    // Check if we already know this merchant (async check)
+    _checkMerchantAndNotify(transaction);
+  }
+
+  Future<void> _checkMerchantAndNotify(Transaction transaction) async {
+    String? category;
+    String? friendlyName;
+
+    if (transaction.rawMerchantId != null) {
+      final id = TransactionParser.normalizeMerchantId(transaction.rawMerchantId!);
+      final merchant = await ServiceInitializer.database.merchantDao.getById(id);
+      if (merchant != null) {
+        category = merchant.category;
+        friendlyName = merchant.friendlyName;
+      }
+    }
 
     final notification = PendingNotification(
       id: 'notif_${DateTime.now().millisecondsSinceEpoch}',
       transaction: transaction,
-      suggestedCategory: existingMapping?.category,
-      suggestedName: existingMapping?.friendlyName,
+      suggestedCategory: category,
+      suggestedName: friendlyName,
       createdAt: DateTime.now(),
     );
 
@@ -88,13 +100,40 @@ class NotificationService {
         .difference(notification.createdAt)
         .inMilliseconds;
 
-    // Learn the merchant mapping
-    if (transaction.rawMerchantId != null) {
-      await MerchantLearningService.instance.learnMerchant(
-        rawMerchantId: transaction.rawMerchantId!,
-        category: category,
-        friendlyName: friendlyName,
+    // Use Social Brain for natural language
+    if ((inputMethod == 'voice' || inputMethod == 'text') && (rawInput != null || category.isNotEmpty)) {
+      final input = rawInput ?? category;
+      await ServiceInitializer.interactions.processUserInput(
+        transactionId: transaction.id,
+        input: input,
+        inputMethod: inputMethod!,
       );
+      
+      _pendingNotifications[index] = notification.copyWith(
+        isHandled: true,
+        selectedCategory: "AI Processing...",
+      );
+      _notifyListeners();
+      return;
+    }
+
+    // Learn the merchant mapping
+    if (transaction.rawMerchantId != null && category.isNotEmpty) {
+      final rawId = transaction.rawMerchantId!;
+      final id = TransactionParser.normalizeMerchantId(rawId);
+      
+      // Update/Learn in SQLite
+      await ServiceInitializer.database.merchantDao.learnCategory(
+        id: id,
+        rawId: rawId,
+        category: category,
+        amount: transaction.amount,
+      );
+      
+      // Also update friendly name if provided
+      if (friendlyName != null && friendlyName.isNotEmpty) {
+        await ServiceInitializer.database.merchantDao.setFriendlyName(id, friendlyName);
+      }
     }
 
     // Record user response for Gemini learning

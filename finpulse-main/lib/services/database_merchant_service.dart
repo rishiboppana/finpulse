@@ -180,6 +180,20 @@ class DatabaseMerchantService {
     return await _db.merchantDao.getStats();
   }
 
+  /// Watch all merchants
+  Stream<List<MerchantMapping>> get watchAllMappings {
+    return _db.merchantDao.watchAll().map((merchants) {
+      return merchants.map((m) => MerchantMapping(
+        rawId: m.rawId,
+        category: m.category ?? '',
+        friendlyName: m.friendlyName,
+        learnedAt: DateTime.fromMillisecondsSinceEpoch(m.learnedAt),
+        usageCount: m.usageCount,
+        isCustomCategory: m.isCustomCategory,
+      )).toList();
+    });
+  }
+
   Map<String, int> _getCategoryCounts() {
     final counts = <String, int>{};
     for (final mapping in _merchantCache.values) {

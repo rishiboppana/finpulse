@@ -30,7 +30,7 @@ class GeminiService {
       apiKey: _apiKey,
       generationConfig: GenerationConfig(
         temperature: 0.1,
-        maxOutputTokens: 256,
+        maxOutputTokens: 1024,
       ),
     );
     return _model!;

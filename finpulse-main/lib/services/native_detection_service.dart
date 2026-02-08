@@ -1,12 +1,10 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-import '../models/transaction.dart';
+import 'package:flutter_application_1/models/transaction.dart';
 import 'transaction_parser.dart';
-import 'gemini_service.dart';
 import 'notification_service.dart';
 import 'system_notification_service.dart';
-import 'merchant_learning_service.dart';
 import 'transaction_storage_service.dart';
 import 'service_initializer.dart';
 import 'app_logger.dart';
@@ -100,11 +98,6 @@ _LocalCheckResult _localTransactionCheck(String text) {
 class NativeDetectionService {
   static const _channel = MethodChannel('com.finpulse/transaction_detection');
   static NativeDetectionService? _instance;
-
-  /// Toggle between mock and real Gemini API
-  /// Set to true to use real Gemini API for complex SMS parsing
-  /// Set to false to use mock/regex-only parsing (for testing)
-  static bool useRealGemini = true;
 
   final List<void Function(Transaction)> _listeners = [];
   bool _isInitialized = false;
@@ -233,50 +226,19 @@ class NativeDetectionService {
     // Parse the transaction using our Universal Parser
     ParseResult result;
 
-    // Try regex first, then Gemini if needed
+    // Try regex first
     result = TransactionParser.parse(rawText, source: detectionSource);
 
     if (!result.success) {
-      // Try real Gemini AI if enabled, otherwise use mock
-      if (useRealGemini) {
-        try {
-          logger.logDataFlowStage(
-            stage: 'GEMINI_FALLBACK',
-            description: 'Regex failed, calling Gemini API',
-          );
-          debugPrint(
-            '[NativeDetectionService] Regex failed, trying Gemini API...',
-          );
-          result = await GeminiService.parseWithAI(
-            rawText,
-            source: detectionSource,
-          );
-          debugPrint(
-            '[NativeDetectionService] Gemini result: ${result.success}',
-          );
-        } catch (e) {
-          debugPrint(
-            '[NativeDetectionService] Gemini API error: $e, falling back to mock',
-          );
-          logger.logError(AppLogger.categoryGemini, 'Gemini fallback to mock', {
-            'error': e.toString(),
-          });
-          result = GeminiService.mockParseWithAI(
-            rawText,
-            source: detectionSource,
-          );
-        }
-      } else {
-        // Use mock for testing (no API call)
-        logger.logDataFlowStage(
-          stage: 'MOCK_PARSING',
-          description: 'Using mock parser (Gemini disabled)',
-        );
-        result = GeminiService.mockParseWithAI(
-          rawText,
-          source: detectionSource,
-        );
-      }
+      // Regex failed.
+      // In the new architecture, we do NOT use Gemini here.
+      // We strictly rely on deterministic regex for detection to ensure speed and zero cost.
+      // Complex/Ambiguous messages are ignored for now.
+      logger.logDataFlowStage(
+        stage: 'PARSING_FAILED',
+        description: 'Regex parsing failed, ignoring message',
+      );
+      debugPrint('[NativeDetectionService] ❌ Regex parsing failed, ignoring message');
     }
 
     if (result.success && result.transaction != null) {
@@ -310,10 +272,13 @@ class NativeDetectionService {
         // Check if merchant is already learned
         final merchantId = transaction.rawMerchantId;
         if (merchantId != null) {
-          final mapping = MerchantLearningService.instance.getMapping(merchantId);
-          if (mapping != null) {
+          final normalizedId = _normalize(merchantId);
+          final mapping = await ServiceInitializer.merchants.getMappingAsync(normalizedId);
+          final category = mapping?.category;
+          if (category != null && category.isNotEmpty) {
             // Auto-categorize using learned mapping!
             // In a full implementation, we could attach the category here
+             debugPrint('[NativeDetectionService] 🧠 Found learned category: $category');
           }
         }
 
@@ -341,6 +306,11 @@ class NativeDetectionService {
         );
       }
     }
+  }
+
+  /// Normalize merchant ID
+  String _normalize(String merchantId) {
+    return merchantId.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '').trim();
   }
 
   // === Status Check Methods ===

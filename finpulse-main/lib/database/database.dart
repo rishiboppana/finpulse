@@ -14,6 +14,8 @@ import 'daos/budget_dao.dart';
 import 'daos/insight_dao.dart';
 import 'daos/chat_dao.dart';
 import 'daos/preference_dao.dart';
+import 'daos/goal_dao.dart';
+import 'daos/merchant_intelligence_dao.dart';
 
 // Generated code
 part 'database.g.dart';
@@ -192,6 +194,44 @@ class Merchants extends Table {
   Set<Column> get primaryKey => {id};
 }
 
+/// User financial goals
+class Goals extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  
+  TextColumn get name => text().withLength(min: 1, max: 100)();
+  RealColumn get targetAmount => real()();
+  RealColumn get currentAmount => real().withDefault(const Constant(0.0))();
+  
+  // Optional details
+  IntColumn get deadline => integer().nullable()(); // Epoch ms
+  TextColumn get icon => text().nullable()(); // Emoji
+  IntColumn get color => integer().nullable()(); // Color value
+  
+  // Status
+  BoolColumn get isCompleted => boolean().withDefault(const Constant(false))();
+  IntColumn get priority => integer().withDefault(const Constant(0))(); // Higher = more important
+  
+  // Timestamps
+  IntColumn get createdAt => integer()();
+  IntColumn get updatedAt => integer()();
+}
+
+/// AI-generated merchant intelligence
+class MerchantIntelligence extends Table {
+  TextColumn get id => text()(); // Same as Merchants.id
+  
+  // AI Analysis
+  TextColumn get historySummary => text().nullable()(); // "Mostly lunch spots"
+  TextColumn get spendingPatterns => text().nullable()(); // JSON: peak times, days
+  RealColumn get typicalAmount => real().nullable()();
+  
+  // Validity
+  IntColumn get lastAnalyzedAt => integer().nullable()();
+  
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
 /// User budget limits
 class Budgets extends Table {
   IntColumn get id => integer().autoIncrement()();
@@ -280,6 +320,8 @@ class Preferences extends Table {
     UserResponses,
     CustomCategories,
     Merchants,
+    Goals,
+    MerchantIntelligence,
     Budgets,
     Insights,
     ChatMessages,
@@ -293,6 +335,8 @@ class Preferences extends Table {
     MerchantDao,
     BudgetDao,
     InsightDao,
+    GoalDao,
+    MerchantIntelligenceDao,
     ChatDao,
     PreferenceDao,
   ],
@@ -332,6 +376,10 @@ class AppDatabase extends _$AppDatabase {
   BudgetDao get budgetDao => BudgetDao(this);
   @override
   InsightDao get insightDao => InsightDao(this);
+  @override
+  GoalDao get goalDao => GoalDao(this);
+  @override
+  MerchantIntelligenceDao get merchantIntelligenceDao => MerchantIntelligenceDao(this);
   @override
   ChatDao get chatDao => ChatDao(this);
   @override

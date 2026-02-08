@@ -18,6 +18,45 @@ class UserResponseDao extends DatabaseAccessor<AppDatabase> with _$UserResponseD
     return await into(userResponses).insert(response);
   }
 
+  /// Log a user interaction
+  Future<int> logResponse({
+    required String transactionId,
+    required String inputMethod,
+    required String rawInput,
+    String? merchantAtTime,
+    double? amountAtTime,
+  }) {
+    return into(userResponses).insert(UserResponsesCompanion(
+      transactionId: Value(transactionId),
+      inputMethod: Value(inputMethod),
+      rawInput: Value(rawInput),
+      merchantAtTime: Value(merchantAtTime),
+      amountAtTime: Value(amountAtTime),
+      createdAt: Value(DateTime.now().millisecondsSinceEpoch),
+    ));
+  }
+
+  /// Update with AI interpretation
+  Future<void> updateAiInterpretation(
+    int id, {
+    required String geminiInterpretation,
+    String? geminiCategory,
+    String? geminiSubcategory,
+    String? geminiReasoning,
+    required String finalCategory,
+  }) {
+    return (update(userResponses)..where((t) => t.id.equals(id))).write(
+      UserResponsesCompanion(
+        geminiInterpretation: Value(geminiInterpretation),
+        geminiCategory: Value(geminiCategory),
+        geminiSubcategory: Value(geminiSubcategory),
+        geminiReasoning: Value(geminiReasoning),
+        finalCategory: Value(finalCategory),
+        interpretedAt: Value(DateTime.now().millisecondsSinceEpoch),
+      ),
+    );
+  }
+
   // ============================================================================
   // READ
   // ============================================================================

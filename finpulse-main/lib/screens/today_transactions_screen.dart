@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/transaction.dart';
+import '../widgets/merchant_intelligence_sheet.dart';
 
 /// Full-screen scrollable list of today's transactions
 class TodayTransactionsScreen extends StatelessWidget {
@@ -108,97 +109,98 @@ class _TransactionCard extends StatelessWidget {
     
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
+      child: InkWell(
+        onTap: () {
+          showModalBottomSheet(
+            context: context,
+            isScrollControlled: true,
+            builder: (context) => MerchantIntelligenceSheet(transaction: transaction),
+          );
+        },
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          // Icon
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: amountColor.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(
-              typeIcon,
-              color: amountColor,
-              size: 24,
-            ),
-          ),
-          const SizedBox(width: 14),
-          
-          // Details
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  transaction.merchantName ?? transaction.rawMerchantId ?? 'Unknown',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: textDark,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              // Icon
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: amountColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                const SizedBox(height: 4),
-                Row(
+                child: Icon(
+                  typeIcon,
+                  color: amountColor,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 14),
+              
+              // Details
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(Icons.access_time, size: 12, color: muted),
-                    const SizedBox(width: 4),
                     Text(
-                      time,
+                      transaction.merchantName ?? transaction.rawMerchantId ?? 'Unknown',
                       style: TextStyle(
-                        fontSize: 12,
-                        color: muted,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: textDark,
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    if (transaction.category != null) ...[
-                      const SizedBox(width: 12),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF1F5F9),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          transaction.category!,
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Icon(Icons.access_time, size: 12, color: muted),
+                        const SizedBox(width: 4),
+                        Text(
+                          time,
                           style: TextStyle(
-                            fontSize: 10,
+                            fontSize: 12,
                             color: muted,
-                            fontWeight: FontWeight.w600,
                           ),
                         ),
-                      ),
-                    ],
+                        if (transaction.category != null) ...[
+                          const SizedBox(width: 12),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF1F5F9),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              transaction.category!,
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: muted,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
                   ],
                 ),
-              ],
-            ),
+              ),
+              
+              // Amount
+              Text(
+                '$typeText₹${transaction.amount.toStringAsFixed(0)}',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                  color: amountColor,
+                ),
+              ),
+            ],
           ),
-          
-          // Amount
-          Text(
-            '$typeText₹${transaction.amount.toStringAsFixed(0)}',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w900,
-              color: amountColor,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

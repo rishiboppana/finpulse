@@ -185,6 +185,15 @@ class TransactionParser {
     final suffix = List.generate(12, (_) => chars[random.nextInt(chars.length)]).join();
     return 'txn_${DateTime.now().millisecondsSinceEpoch}_$suffix';
   }
+
+  /// Normalize merchant ID for consistent matching
+  /// Removes special characters and converts to uppercase
+  static String normalizeMerchantId(String rawId) {
+    return rawId
+        .toUpperCase()
+        .replaceAll(RegExp(r'[^A-Z0-9]'), '')
+        .trim();
+  }
 }
 
 /// Sample SMS templates for testing (The "Chaos Suite")

@@ -191,9 +191,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         .first; // Get latest snapshot
     final categories = await txService.getSpendingByCategoryAsync();
 
-    // Sort transactions by date descending and take top 10
+    // Sort transactions by date descending and take top 50
     recentTxs.sort((a, b) => b.timestamp.compareTo(a.timestamp));
-    final last10Txs = recentTxs.take(10).toList();
+    final last50Txs = recentTxs.take(50).toList();
 
     // 2. Build context string
     final contextBuffer = StringBuffer();
@@ -207,8 +207,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       contextBuffer.writeln("- $cat: ₹${amount.toStringAsFixed(2)}");
     });
 
-    contextBuffer.writeln("\nRecent Transactions (Last 10):");
-    for (final tx in last10Txs) {
+    contextBuffer.writeln("\nRecent Transactions (Last 50):");
+    for (final tx in last50Txs) {
       contextBuffer.writeln(
         "- ${tx.timestamp.toLocal().toString().split('.')[0]}: ${tx.merchantName ?? tx.rawMerchantId} - ₹${tx.amount.toStringAsFixed(2)} (${tx.category ?? 'Uncategorized'})",
       );

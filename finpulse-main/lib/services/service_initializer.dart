@@ -2,7 +2,10 @@ import 'package:flutter/foundation.dart';
 import '../database/database.dart';
 import '../database/migration.dart';
 import 'database_transaction_service.dart';
+import 'database_transaction_service.dart';
 import 'database_merchant_service.dart';
+import 'interaction_service.dart';
+import 'insight_service.dart';
 
 /// Service Initializer for FinPulse
 /// 
@@ -60,6 +63,12 @@ class ServiceInitializer {
   /// Get merchant service
   static DatabaseMerchantService get merchants => DatabaseMerchantService.instance;
 
+  /// Get interaction service
+  static InteractionService get interactions => InteractionService.instance;
+
+  /// Get insight service
+  static InsightService get insights => InsightService.instance;
+
   /// Close all services (call on app dispose)
   static Future<void> dispose() async {
     await AppDatabase.instance.closeDatabase();
@@ -82,4 +91,10 @@ extension ServiceAccess on AppDatabase {
   
   /// Get the merchant service
   DatabaseMerchantService get merchantService => DatabaseMerchantService.instance;
+  
+  /// Get the interaction service
+  InteractionService get interactionService => InteractionService.instance;
+  
+  /// Get the insight service
+  InsightService get insightService => InsightService.instance;
 }
